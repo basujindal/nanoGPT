@@ -21,6 +21,7 @@ import time
 import math
 import pickle
 from contextlib import nullcontext
+from tqdm import trange
 
 import numpy as np
 import torch
@@ -28,7 +29,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
 from model import GPTConfig, GPT
-
+from utils import Sampler
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
@@ -45,13 +46,8 @@ wandb_project = "transformers"
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
-<<<<<<< HEAD
 gradient_accumulation_steps = 1 # used to simulate larger batch sizes
 batch_size = 32 # if gradient_accumulation_steps > 1, this is the micro-batch size
-=======
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
->>>>>>> 7fe4a099ad2a4654f96a51c0736ecf347149c34c
 block_size = 1024
 # model
 n_layer = 12
@@ -79,14 +75,12 @@ dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto i
 compile = True # use PyTorch 2.0 to compile the model to be faster
 # CPT
 learning_block = False
-print('Using Learning_Block: ', learning_block)
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
-# print('config', config)
 print("learning_block", learning_block)
 
 # various inits, derived attributes, I/O setup
@@ -121,7 +115,7 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # poor man's data loader
-data_dir = os.path.join('/root/data/nanoGPT/data/', dataset)
+data_dir = os.path.join('/home/li/workspace_basu/nanoGPT-master/data', dataset)
 train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
 val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
 def get_batch(split):
@@ -187,7 +181,7 @@ elif init_from == 'resume':
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
     # initialize from OpenAI GPT-2 weights
-    override_args = dict(dropout=dropout, learning_block = learning_block)
+    override_args = dict(dropout=dropout, learning_block=learning_block)
     model = GPT.from_pretrained(init_from, override_args)
     # read off the created config params, so we can store them into checkpoint correctly
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
@@ -199,6 +193,20 @@ if block_size < model.config.block_size:
 
 print("model", model)
 model.to(device)
+
+## set requires grad to false for all layers except learning block
+
+if learning_block:
+    print("setting requires_grad=False for all layers except learning block")
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            if "learning_block" not in name:
+                param.requires_grad = False
+
+## total number of parameters that requires grad
+total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+print("total params with requires grad", total_params/1e6, "M")
+
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
 scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
@@ -220,11 +228,17 @@ if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
 
+sampler = Sampler()
+
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
 def estimate_loss():
     out = {}
     model.eval()
+
+    print("Sampling from trained model")
+    sampler.generate(model)
+
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
@@ -261,7 +275,9 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
-while True:
+iter_num_resume = iter_num
+
+for iter_num in trange(iter_num_resume, max_iters+1):
     print("Training")
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
@@ -292,7 +308,7 @@ while True:
                     'config': config,
                 }
                 print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
+                torch.save(checkpoint, os.path.join(out_dir, str(best_val_loss) + '_ckpt.pt'))
     if iter_num == 0 and eval_only:
         break
 
@@ -339,10 +355,6 @@ while True:
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
     iter_num += 1
     local_iter_num += 1
-
-    # termination conditions
-    if iter_num > max_iters:
-        break
 
 if ddp:
     destroy_process_group()
