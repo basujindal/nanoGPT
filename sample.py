@@ -10,7 +10,7 @@ from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
-out_dir = 'shakespeare_finetune' # ignored if init_from is not 'resume'
+out_dir = '/root/data/nanoGPT/harrypotter-learning-block_1684374938.2349591' # ignored if init_from is not 'resume'
 start = "\n" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples = 2 # number of samples to draw
 max_new_tokens = 200 # number of tokens generated in each sample
@@ -34,8 +34,15 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 # model
 if init_from == 'resume':
     # init from a model saved in a specific directory
-    ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+    ## open file with the least val_loss
+    ckpts = os.listdir(out_dir)
+    ckpt = sorted([ckpt for ckpt in ckpts if ckpt.endswith('.pt')])[0]
+    print(f"Loading checkpoint {ckpt}...")
+
+    ckpt_path = os.path.join(out_dir, ckpt)
     checkpoint = torch.load(ckpt_path, map_location=device)
+    print(f"Loading model from {ckpt_path}...")
+
     gptconf = GPTConfig(**checkpoint['model_args'])
     model = GPT(gptconf)
     state_dict = checkpoint['model']
@@ -84,6 +91,7 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
+            print("generating sample", k+1, "of", num_samples)
             y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
             print(decode(y[0].tolist()))
             print('---------------')

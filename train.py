@@ -72,6 +72,9 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
+
+
+
 compile = True # use PyTorch 2.0 to compile the model to be faster
 # CPT
 learning_block = False
@@ -81,7 +84,12 @@ exec(open('configurator.py').read()) # overrides from command line or config fil
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
-print("learning_block", learning_block)
+## if torch version < 2 set compile to False
+if torch.__version__[0] == '1' and compile:
+    print("PyTorch version < 2.0, disabling compilation")
+    compile = False
+
+print("Using Learning Block", learning_block)
 
 # various inits, derived attributes, I/O setup
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
@@ -115,7 +123,7 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # poor man's data loader
-data_dir = os.path.join('/home/li/workspace_basu/nanoGPT-master/data', dataset)
+data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', dataset)
 train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
 val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
 def get_batch(split):
@@ -277,7 +285,7 @@ raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
 iter_num_resume = iter_num
 
-for iter_num in trange(iter_num_resume, max_iters+1):
+for iter_num in range(iter_num_resume, max_iters+1):
     print("Training")
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate

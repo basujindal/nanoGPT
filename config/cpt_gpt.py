@@ -1,14 +1,15 @@
 import time
 
 learning_block = True
-out_dir = 'shakespeare-learning-block_' + str(time.time())
+
+dataset = 'harrypotter'
+out_dir = dataset + '-learning-block_' + str(time.time())
 eval_interval = 5 
 eval_iters = 40
 wandb_log = False # feel free to turn on
-wandb_project = 'shakespeare'
-wandb_run_name = 'ft-' + out_dir + '-' + str(time.time())
+wandb_project = 'learning-block'
+wandb_run_name = out_dir
 
-dataset = 'shakespeare'
 init_from = 'gpt2-large' # this is the second largest GPT-2 model
 
 # only save checkpoints if the validation loss improves
