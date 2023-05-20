@@ -72,17 +72,19 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
-
-
-
 compile = True # use PyTorch 2.0 to compile the model to be faster
-# CPT
+
+# learning block
 learning_block = False
+influence = 0.5
 # -----------------------------------------------------------------------------
+
+
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
+
 
 ## if torch version < 2 set compile to False
 if torch.__version__[0] == '1' and compile:
@@ -110,7 +112,6 @@ else:
     seed_offset = 0
     ddp_world_size = 1
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
-print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
@@ -137,6 +138,10 @@ def get_batch(split):
     else:
         x, y = x.to(device), y.to(device)
     return x, y
+
+
+print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
+
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
@@ -189,11 +194,12 @@ elif init_from == 'resume':
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
     # initialize from OpenAI GPT-2 weights
-    override_args = dict(dropout=dropout, learning_block=learning_block)
+    override_args = dict(dropout=dropout, learning_block=learning_block, influence=influence)
     model = GPT.from_pretrained(init_from, override_args)
     # read off the created config params, so we can store them into checkpoint correctly
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
         model_args[k] = getattr(model.config, k)
+        
 # crop down the model block size if desired, using model surgery
 if block_size < model.config.block_size:
     model.crop_block_size(block_size)
@@ -275,6 +281,8 @@ def get_lr(it):
 # logging
 if wandb_log and master_process:
     import wandb
+    ## add wandb key
+    wandb_api_key = "84742742b66deb0de22b5dfec52ec1f23a539d9b"
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
 
 # training loop

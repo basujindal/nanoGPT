@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 import torch
 import tiktoken
+import numpy as np
 
 class Sampler():
     def __init__(self, start="\n", seed = 1337, device='cuda', dtype='bfloat16'):
@@ -34,3 +35,16 @@ class Sampler():
                     y = model.generate(self.x, max_new_tokens, temperature=temperature, top_k=top_k)
                     print(self.decode(y[0].tolist()))
                     print('---------------')
+
+
+def get_batch(split, block_size, batch_size, device_type, device, train_data, val_data):
+    data = train_data if split == 'train' else val_data
+    ix = torch.randint(len(data) - block_size, (batch_size,))
+    x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
+    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
+    if device_type == 'cuda':
+        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
+        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+    else:
+        x, y = x.to(device), y.to(device)
+    return x, y

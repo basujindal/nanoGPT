@@ -41,6 +41,7 @@ class CausalSelfAttention(nn.Module):
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.influnce = config.influence
 
         # learning block
         if config.learning_block:
@@ -71,8 +72,7 @@ class CausalSelfAttention(nn.Module):
          ## learning block
         if hasattr(self, 'learning_block'):
             _v = self.learning_block(x)
-            influnce = 0.5
-            v = v * (1 - influnce) + _v * influnce
+            v = v * (1 - self.influnce) + _v * self.influnce
 
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -134,6 +134,7 @@ class GPTConfig:
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     learning_block: bool = False # set to True if you want to add a linear layer before q in self-attention
+    influence: int = 0.5
 
 class GPT(nn.Module):
 
@@ -243,13 +244,13 @@ class GPT(nn.Module):
         config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
         config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         config_args['bias'] = True # always True for GPT model checkpoints
-        # we can override the dropout rate, if desired
-        if 'dropout' in override_args:
-            print(f"overriding dropout rate to {override_args['dropout']}")
-            config_args['dropout'] = override_args['dropout']
-        if 'learning_block' in override_args:
-            print(f"overriding learning block to {override_args['learning_block']}")
-            config_args['learning_block' ] = override_args['learning_block' ]
+
+
+        # we can override if desired
+        for k, v in override_args.items():
+            print(f"overriding config.{k}={v}")
+            config_args[k] = v
+
         # create a from-scratch initialized minGPT model
 
         config = GPTConfig(**config_args)
