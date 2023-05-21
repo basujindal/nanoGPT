@@ -2,6 +2,7 @@ from contextlib import nullcontext
 import torch
 import tiktoken
 import numpy as np
+from datetime import datetime
 
 class Sampler():
     def __init__(self, start="\n", seed = 1337, device='cuda', dtype='bfloat16'):
@@ -48,3 +49,7 @@ def get_batch(split, block_size, batch_size, device_type, device, train_data, va
     else:
         x, y = x.to(device), y.to(device)
     return x, y
+
+def get_time_str():
+    now = datetime.now()
+    return now.strftime("%d/%m/%Y/%H:%M")

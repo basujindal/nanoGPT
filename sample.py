@@ -10,10 +10,10 @@ from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
-out_dir = '/home/li/basu_workspace/nanoGPT/harrypotter-learning-block_1684388718.5518227' # ignored if init_from is not 'resume'
-start = "Page | 1 " # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+out_dir = '/root/data/nanoGPT/harrypotter-learning-block_1684623756.0864372' # ignored if init_from is not 'resume'
+start = "Mr Dursley lived in " # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples = 2 # number of samples to draw
-max_new_tokens = 200 # number of tokens generated in each sample
+max_new_tokens = 10 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
 top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
 seed = 1337
@@ -26,6 +26,8 @@ learning_block = True
 influence = 0
 # -----------------------------------------------------------------------------
 
+# sampling = "continuous"
+sampling = "discrete"
 
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
@@ -47,7 +49,8 @@ if init_from == 'resume':
     print(f"Loading checkpoint {ckpt}...")
 
     ckpt_path = os.path.join(out_dir, ckpt)
-    checkpoint = torch.load(ckpt_path, map_location=device)
+    checkpoint = torch.load(ckpt_path)
+    print("ckpt loaded")
 
     checkpoint['model_args']['learning_block'] = learning_block
     checkpoint['model_args']['influence'] = influence
@@ -62,8 +65,6 @@ if init_from == 'resume':
             state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
         if k.endswith('.attn.bias'):
             state_dict.pop(k)
-
-    
             
     model.load_state_dict(state_dict)
 
@@ -113,5 +114,18 @@ with torch.no_grad():
             print('---------------')
 
 
+if sampling == "continuous":
 
+    while True:
+        start = str(input())
+        start_ids = encode(start)
+        x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
+        # run generation
+        with torch.no_grad():
+            with ctx:
+                for k in range(num_samples):
+                    print("generating sample", k+1, "of", num_samples)
+                    y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+                    print(decode(y[0].tolist()))
+                    print('---------------')

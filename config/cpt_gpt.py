@@ -1,11 +1,11 @@
-import time
+from utils import get_time_str
 
 learning_block = True
 influence = 0.5
 
 init_from = 'gpt2-large' # this is the second largest GPT-2 model
 dataset = 'harrypotter'
-out_dir = dataset + '-learning-block_' + str(time.time())
+out_dir = dataset + '-learning-block_' + get_time_str()
 eval_interval = 5 
 eval_iters = 40
 
@@ -26,7 +26,7 @@ max_iters = 100
 
 # Decay LR
 learning_rate = 3e-4
-decay_lr = False
-warmup_iters = 20 # how many steps to warm up for
+decay_lr = True
+warmup_iters = 1 # how many steps to warm up for
 lr_decay_iters = 100 # should be ~= max_iters per Chinchilla
-min_lr = 3e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+min_lr = 3e-6 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
