@@ -1,10 +1,13 @@
 from utils import get_time_str
 
+device = 'cuda:1'
+
 learning_block = True
 influence = 0.5
 
-init_from = 'gpt2-large' # this is the second largest GPT-2 model
-dataset = 'harrypotter'
+init_from = 'gpt2-xl' # this is the second largest GPT-2 model
+dataset = 'llama'
+sample_start = "The paper is about llama, a LLM with "
 out_dir = dataset + '-learning-block_' + get_time_str()
 eval_interval = 5 
 eval_iters = 40

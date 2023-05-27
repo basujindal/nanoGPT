@@ -6,14 +6,15 @@ import pickle
 from contextlib import nullcontext
 import torch
 import tiktoken
-from model import GPTConfig, GPT
+from utils import load_model
+from llamaTokenizer import LLaMAtokenizer
 
 # -----------------------------------------------------------------------------
-init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
-out_dir = '/root/data/nanoGPT/harrypotter-learning-block_1684623756.0864372' # ignored if init_from is not 'resume'
-start = "Mr Dursley lived in " # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
-num_samples = 2 # number of samples to draw
-max_new_tokens = 10 # number of tokens generated in each sample
+init_from = ['resume', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
+out_dir = '/home/li/basu_workspace/nanoGPT/harrypotter-learning-block_1684388718.5518227' # ignored if init_from is not 'resume'
+start = "User: Capital of France? \n Bot: Paris \n User: Capital of India \n Bot:"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+num_samples =  3  # number of samples to draw
+max_new_tokens = 100 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
 top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
 seed = 1337
@@ -25,6 +26,8 @@ compile = False # use PyTorch 2.0 to compile the model to be faster
 learning_block = True
 influence = 0
 # -----------------------------------------------------------------------------
+
+model_type = 'llama' if 'llama' in init_from else 'gpt2'
 
 # sampling = "continuous"
 sampling = "discrete"
@@ -41,41 +44,14 @@ ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torc
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
 # model
-if init_from == 'resume':
-    # init from a model saved in a specific directory
-    ## open file with the least val_loss
-    ckpts = os.listdir(out_dir)
-    ckpt = sorted([ckpt for ckpt in ckpts if ckpt.endswith('.pt')])[0]
-    print(f"Loading checkpoint {ckpt}...")
-
-    ckpt_path = os.path.join(out_dir, ckpt)
-    checkpoint = torch.load(ckpt_path)
-    print("ckpt loaded")
-
-    checkpoint['model_args']['learning_block'] = learning_block
-    checkpoint['model_args']['influence'] = influence
-
-    gptconf = GPTConfig(**checkpoint['model_args'])
-    model = GPT(gptconf)
-
-    state_dict = checkpoint['model']
-    unwanted_prefix = '_orig_mod.'
-    for k,v in list(state_dict.items()):
-        if k.startswith(unwanted_prefix):
-            state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
-        if k.endswith('.attn.bias'):
-            state_dict.pop(k)
-            
-    model.load_state_dict(state_dict)
-
-elif init_from.startswith('gpt2'):
-    # init from a given GPT-2 model
-    model = GPT.from_pretrained(init_from, dict(dropout=0.0))
+model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
 model.eval()
 model.to(device)
+print(model)
 if compile:
     model = torch.compile(model) # requires PyTorch 2.0 (optional)
+
 
 # look for the meta pickle in case it is available in the dataset folder
 load_meta = False
@@ -91,41 +67,56 @@ if load_meta:
     encode = lambda s: [stoi[c] for c in s]
     decode = lambda l: ''.join([itos[i] for i in l])
 else:
-    # ok let's assume gpt-2 encodings by default
-    print("No meta.pkl found, assuming GPT-2 encodings...")
-    enc = tiktoken.get_encoding("gpt2")
-    encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
-    decode = lambda l: enc.decode(l)
 
-# encode the beginning of the prompt
-if start.startswith('FILE:'):
-    with open(start[5:], 'r', encoding='utf-8') as f:
-        start = f.read()
-start_ids = encode(start)
-x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+    if model_type == 'gpt2':
+        # ok let's assume gpt-2 encodings by default
+        print("No meta.pkl found, assuming GPT-2 encodings...")
+        enc = tiktoken.get_encoding("gpt2")
+        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+        decode = lambda l: enc.decode(l)
 
-# run generation
-with torch.no_grad():
-    with ctx:
-        for k in range(num_samples):
-            print("generating sample", k+1, "of", num_samples)
-            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
-            print(decode(y[0].tolist()))
-            print('---------------')
+    elif model_type == 'llama':
+        tokenizer_path = "/home/li/basu_workspace/llama/tokenizer.model"
+        tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
+        encode = lambda s: tokenizer.encode(s, bos=True, eos=False)
+        print(encode)
+        decode = lambda l: tokenizer.decode(l)
+
+if sampling == "discrete":
+    # encode the beginning of the prompt
+    if start.startswith('FILE:'):
+        with open(start[5:], 'r', encoding='utf-8') as f:
+            start = f.read()
+
+    # run generation
+    with torch.no_grad():
+        with ctx:
+            for k in range(num_samples):
+                print("generating sample", k+1, "of", num_samples)
+
+                start_ids = encode(start)
+                tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+                y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
+                print(decode(y[0].tolist()))
+                print('---------------')
 
 
 if sampling == "continuous":
 
     while True:
+        ## take input
+        print("Enter a sentence to continue:")
         start = str(input())
         start_ids = encode(start)
-        x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+        tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
         # run generation
         with torch.no_grad():
             with ctx:
                 for k in range(num_samples):
-                    print("generating sample", k+1, "of", num_samples)
-                    y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+                    print("Sample", k+1, "------------------------------------")
+                    
+                    y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
                     print(decode(y[0].tolist()))
                     print('---------------')
+                    
