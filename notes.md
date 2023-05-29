@@ -1,3 +1,10 @@
+## Push changes
+
+```bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_rsa_basu
+```
+
 ## Train
 
 ```bash

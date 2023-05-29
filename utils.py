@@ -1,35 +1,36 @@
 from contextlib import nullcontext
 import os
+import time
 import torch
 import tiktoken
+import math
+import inspect
+from dataclasses import dataclass
+
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
 import numpy as np
 from datetime import datetime
 import json
+from typing import Tuple
 from pathlib import Path
 
 from model import GPTConfig, GPT
 from llamaModel import LLaMAConf, LLaMA
+from llamaTokenizer import LLaMAtokenizer
 
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# This software may be used and distributed according to the terms of the GNU General Public License version 3.
+from pynvml import *
 
-from typing import Tuple
-# from fairscale.nn.model_parallel.initialize import initialize_model_parallel
-
-# def setup_model_parallel() -> Tuple[int, int]:
-#     local_rank = int(os.environ.get("LOCAL_RANK", -1))
-#     world_size = int(os.environ.get("WORLD_SIZE", -1))
-
-#     torch.distributed.init_process_group("nccl")
-#     initialize_model_parallel(world_size)
-#     torch.cuda.set_device(local_rank)
-
-#     # seed must be the same in all processes
-#     torch.manual_seed(1)
+def print_gpu_utilization():
+    nvmlInit()
+    handle = nvmlDeviceGetHandleByIndex(0)
+    info = nvmlDeviceGetMemoryInfo(handle)
+    print(f"GPU memory occupied: {info.used//1024**2} MB.")
 
 
 class Sampler():
-    def __init__(self, start="\n", seed = 1337, device='cuda', dtype='bfloat16'):
+    def __init__(self, model_name = "gpt2", start="\n", seed = 1337, device='cuda', dtype='bfloat16'):
 
         """
         Sample from a trained model
@@ -41,15 +42,14 @@ class Sampler():
         ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
         self.ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-        enc = tiktoken.get_encoding("gpt2")
-        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
-        self.decode = lambda l: enc.decode(l)
+        ## tokenizer
+        self.encode, self.decode = get_tokenizer(model_name, None)
 
         # encode the beginning of the prompt
         if start.startswith('FILE:'):
             with open(start[5:], 'r', encoding='utf-8') as f:
                 start = f.read()
-        start_ids = encode(start)
+        start_ids = self.encode(start)
         self.x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200):
@@ -90,7 +90,11 @@ def sample_top_p(probs, p):
     return next_token
 
 def load_model(model_type, out_dir, device, learning_block, influence, init_from,
-               n_layer=None,n_head=None,n_embd=None,block_size=None,bias=None, dropout=None, meta_vocab_size=None):
+               n_layer=None,n_head=None,n_embd=None,block_size=None,bias=None,
+            dropout=None, meta_vocab_size=None, load_state_dict=True):
+
+    print("Loading model")
+    start_time = time.time()
 
     if model_type == 'gpt2':
         model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
@@ -196,10 +200,61 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
             print(model_args)
 
+
             conf = LLaMAConf(**model_args)
+            t = time.time()
+            # with torch.device("meta"):
             model = LLaMA(conf)
-            weights = torch.load(ckpt_path, map_location='cpu')
-            model.load_state_dict(weights)
+            print("Time to create model: ", time.time() - t)
+                
+            if load_state_dict:
+                print("Loading state dict...")
+                weights = torch.load(ckpt_path, map_location='cpu')
+                model.load_state_dict(weights)
 
 
+    print("Time to load model: ", time.time() - start_time)
     return model, model_args
+
+
+def get_tokenizer(model_type, meta_vocab_size=None):
+    if model_type == 'gpt2':
+        # ok let's assume gpt-2 encodings by default
+        print("No meta.pkl found, assuming GPT-2 encodings...")
+        enc = tiktoken.get_encoding("gpt2")
+        encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+        decode = lambda l: enc.decode(l)
+
+    elif model_type == 'llama':
+        tokenizer_path = "/home/li/basu_workspace/llama/tokenizer.model"
+        tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
+        encode = lambda s: tokenizer.encode(s, bos=True, eos=False)
+        decode = lambda l: tokenizer.decode(l)
+
+    return encode, decode
+
+def configure_optimizers(model, weight_decay, learning_rate, betas, device_type):
+    # start with all of the candidate parameters
+    param_dict = {pn: p for pn, p in model.named_parameters()}
+    # filter out those that do not require grad
+    param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+    # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+    # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+    decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+    nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+    optim_groups = [
+        {'params': decay_params, 'weight_decay': weight_decay},
+        {'params': nodecay_params, 'weight_decay': 0.0}
+    ]
+    num_decay_params = sum(p.numel() for p in decay_params)
+    num_nodecay_params = sum(p.numel() for p in nodecay_params)
+    print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+    print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+    # Create AdamW optimizer and use the fused version if it is available
+    fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+    use_fused = fused_available and device_type == 'cuda'
+    extra_args = dict(fused=True) if use_fused else dict()
+    optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
+    print(f"using fused AdamW: {use_fused}")
+
+    return optimizer

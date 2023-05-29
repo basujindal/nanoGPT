@@ -139,7 +139,8 @@ if eval_method == 'loss':
             for k in trange(eval_iters):
                 X, Y = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data)
                 with ctx:
-                    logits, loss = model(X, Y)
+                    logits = model(X)
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
                 losses[k] = loss.item()
             out[split] = losses.mean()
         return out

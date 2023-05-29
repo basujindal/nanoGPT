@@ -83,7 +83,8 @@ if profile:
         X, Y = get_batch('train')
         for k in range(num_steps):
             with ctx:
-                logits, loss = model(X, Y)
+                logits = model(X)
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             X, Y = get_batch('train')
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -102,7 +103,8 @@ else:
         X, Y = get_batch('train')
         for k in range(num_steps):
             with ctx:
-                logits, loss = model(X, Y)
+                logits = model(X)
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             X, Y = get_batch('train')
             optimizer.zero_grad(set_to_none=True)
             loss.backward()

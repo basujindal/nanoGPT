@@ -1,21 +1,3 @@
-"""
-This training script can be run both on a single gpu in debug mode,
-and also in a larger training run with distributed data parallel (ddp).
-
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False
-
-To run with DDP on 4 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=4 train.py
-
-To run with DDP on 4 gpus across 2 nodes, example:
-- Run on the first (master) node with example IP 123.456.123.456:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123.456 --master_port=1234 train.py
-- Run on the worker node:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py
-(If your cluster does not have Infiniband interconnect prepend NCCL_IB_DISABLE=1)
-"""
-
 import os
 import time
 import math
@@ -28,7 +10,9 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
-from utils import Sampler, get_batch, load_model
+from model import GPTConfig, GPT
+from utils import load_model, get_tokenizer, Sampler, get_batch, configure_optimizers, print_gpu_utilization
+from llamaTokenizer import LLaMAtokenizer
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -75,8 +59,8 @@ device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps'
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
 
-model_type = 'gpt2'
-
+ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+torch.set_default_dtype(ptdtype)
 
 # learning block
 learning_block = False
@@ -89,6 +73,7 @@ exec(open('configurator.py').read()) # overrides from command line or config fil
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
+model_type = 'llama' if 'llama' in init_from else 'gpt2'
 
 ## if torch version < 2 set compile to False
 if torch.__version__[0] == '1' and compile:
@@ -149,15 +134,17 @@ if os.path.exists(meta_path):
     meta_vocab_size = meta['vocab_size']
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
+# model init
+model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+                  bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
 
 
-# load model
-model, model_args = load_model(model_type, out_dir, device, learning_block, 
-                               influence, init_from,  n_layer, n_head, 
-                               n_embd, block_size, bias, dropout, meta_vocab_size)
+model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
-print("model", model)
 model.to(device)
+print_gpu_utilization()
+
+
 
 ## set requires grad to false for all layers except learning block
 
@@ -177,7 +164,7 @@ print("total params with requires grad", total_params/1e6, "M")
 scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
 if init_from == 'resume':
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
@@ -193,7 +180,7 @@ if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
 
-sampler = Sampler(start = sample_start, device = device)
+sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
