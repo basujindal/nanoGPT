@@ -51,8 +51,8 @@ gradient_accumulation_steps = 1 # used to simulate larger batch sizes
 batch_size = 32 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 # model
-n_layer = 12
-n_head = 12
+n_layers = 12
+n_heads = 12
 n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
@@ -153,7 +153,7 @@ if os.path.exists(meta_path):
 
 # load model
 model, model_args = load_model(model_type, out_dir, device, learning_block, 
-                               influence, init_from,  n_layer, n_head, 
+                               influence, init_from,  n_layers, n_heads, 
                                n_embd, block_size, bias, dropout, meta_vocab_size)
 
 print("model", model)

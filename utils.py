@@ -3,17 +3,13 @@ import os
 import time
 import torch
 import tiktoken
-import math
 import inspect
 from dataclasses import dataclass
 
 import torch
-import torch.nn as nn
-from torch.nn import functional as F
 import numpy as np
 from datetime import datetime
 import json
-from typing import Tuple
 from pathlib import Path
 
 from model import GPTConfig, GPT
@@ -22,12 +18,51 @@ from llamaTokenizer import LLaMAtokenizer
 
 from pynvml import *
 
+
 def print_gpu_utilization():
     nvmlInit()
     handle = nvmlDeviceGetHandleByIndex(0)
     info = nvmlDeviceGetMemoryInfo(handle)
-    print(f"GPU memory occupied: {info.used//1024**2} MB.")
+    return info.used/1024**3
 
+
+class time_gpu():
+    def __init__(self, device, statement="Time taken: "):
+        self.statement = statement
+        
+        self.device = 0
+        if device == 'cpu':
+            self.device = 'cpu'
+        elif ':' in device:
+            self.device = int(device.split(':')[-1]) 
+        
+    def __enter__(self):
+        self.t = time.time()
+
+        if self.device != 'cpu':
+        
+            self.gpu = print_gpu_utilization()
+            torch.cuda.max_memory_allocated(self.device)
+            
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        
+        if self.device == 'cpu':
+            print(self.statement, time.time() - self.t)
+            return
+        
+        print(self.statement, time.time() - self.t)
+        print("GPU memory used:", print_gpu_utilization() - self.gpu)
+        t = torch.cuda.get_device_properties(self.device).total_memory
+        r = torch.cuda.memory_reserved(self.device)
+        a = torch.cuda.memory_allocated(self.device)
+        max_mem = torch.cuda.max_memory_allocated(self.device)
+        
+        max_spaces = 10
+        print_space = lambda x: ((max_spaces - len(x))//2)*" " +  x + ((max_spaces - len(x))//2)*" "
+        
+        print("|".join([print_space(i) for i in ["Total", "Reserved", "Allocated", "Max"]]))
+        print("|".join([ print_space(i) for i in [str(round(x/1024**3, 2)) + 'GB' for x in [t, r, a, max_mem]]]))  
 
 class Sampler():
     def __init__(self, model_name = "gpt2", start="\n", seed = 1337, device='cuda', dtype='bfloat16'):
@@ -43,7 +78,7 @@ class Sampler():
         self.ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
         ## tokenizer
-        self.encode, self.decode = get_tokenizer(model_name, None)
+        self.encode, self.decode = get_tokenizer(model_name)
 
         # encode the beginning of the prompt
         if start.startswith('FILE:'):
@@ -90,14 +125,14 @@ def sample_top_p(probs, p):
     return next_token
 
 def load_model(model_type, out_dir, device, learning_block, influence, init_from,
-               n_layer=None,n_head=None,n_embd=None,block_size=None,bias=None,
-            dropout=None, meta_vocab_size=None, load_state_dict=True):
+               n_layers=None,n_heads=None,n_embd=None,block_size=None,bias=None,
+            dropout=None, meta_vocab_size=None):
 
-    print("Loading model")
+    print("Creating and loading model")
     start_time = time.time()
 
     if model_type == 'gpt2':
-        model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+        model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=block_size,
                     bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
 
 
@@ -112,14 +147,13 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             model = GPT(gptconf)
 
         elif init_from == 'resume':
-            print(f"Resuming training from {out_dir}")
-            # resume training from a checkpoint.
+            
             ckpt_path = os.path.join(out_dir, 'ckpt.pt')
             checkpoint = torch.load(ckpt_path, map_location=device)
             checkpoint_model_args = checkpoint['model_args']
             # force these config attributes to be equal otherwise we can't even resume training
             # the rest of the attributes (e.g. dropout) can stay as desired from command line
-            for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
+            for k in ['n_layers', 'n_heads', 'n_embd', 'block_size', 'bias', 'vocab_size']:
                 model_args[k] = checkpoint_model_args[k]
             # create the model
             gptconf = GPTConfig(**model_args)
@@ -132,8 +166,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
                 if k.startswith(unwanted_prefix):
                     state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
             model.load_state_dict(state_dict)
-            iter_num = checkpoint['iter_num']
-            best_val_loss = checkpoint['best_val_loss']
+
 
         elif init_from.startswith('gpt2'):
             print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
@@ -141,7 +174,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             override_args = dict(dropout=dropout, learning_block=learning_block, influence=influence)
             model = GPT.from_pretrained(init_from, override_args)
             # read off the created config params, so we can store them into checkpoint correctly
-            for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
+            for k in ['n_layers', 'n_heads', 'n_embd', 'block_size', 'bias', 'vocab_size']:
                 model_args[k] = getattr(model.config, k)
                 
         # crop down the model block size if desired, using model surgery
@@ -150,74 +183,66 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             model_args['block_size'] = block_size # so that the checkpoint will have the right value
 
     elif model_type == 'llama':
-
-        # setup_model_parallel()
-
-        model_args = dict(n_layers=n_layer, n_heads=n_head,learning_block=learning_block, influence=influence,
-                        vocab_size = -1, max_seq_len=2048)
+        
+        model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, 
+                        learning_block=learning_block, influence=influence) # start with model_args from command line
                         
         if init_from == 'scratch':
             # init a new model from scratch
             print("Initializing a new model from scratch")
             conf = LLaMAConf(**model_args)
-            model = LLaMA(conf)
+            
+            with time_gpu(device, "Creating model"):
+                model = LLaMA(conf)
 
-        elif init_from == 'resume':
-            print(f"Resuming training from {out_dir}")
-            # resume training from a checkpoint.
-            ckpt_path = os.path.join(out_dir, 'ckpt.pt')
-            checkpoint = torch.load(ckpt_path, map_location=device)
-            checkpoint_model_args = checkpoint['model_args']
-            # force these config attributes to be equal otherwise we can't even resume training
-            # the rest of the attributes (e.g. dropout) can stay as desired from command line
-            for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-                model_args[k] = checkpoint_model_args[k]
-            # create the model
+        elif init_from == 'resume_llama':
+
+            with time_gpu(device, "Loading checkpoint"):
+                checkpoint = torch.load(out_dir, map_location=device)
+
+            model_args = checkpoint['model_args']
             conf = LLaMAConf(**model_args)
-            model = LLaMA(conf)
+
+            with time_gpu(device, "Creating model"):
+                model = LLaMA(conf)
+            
             state_dict = checkpoint['model']
-            # fix the keys of the state dictionary :(
-            # honestly no idea how checkpoints sometimes get this prefix, have to debug more
-            model.load_state_dict(state_dict)
-            iter_num = checkpoint['iter_num']
-            best_val_loss = checkpoint['best_val_loss']
+            
+            with time_gpu(device, "Loading state dict"):
+                model.load_state_dict(state_dict)
 
         elif init_from.startswith('llama'):
 
-            ckpt_dir = "/home/li/basu_workspace/llama/7B"
-            ckpt_path = "/home/li/basu_workspace/nanoGPT/lit-llama/7B/lit-llama.pth"
+            ## get current file path
+            file_path = os.path.dirname(os.path.realpath(__file__))
+
+            ckpt_dir = os.path.join(file_path, "../llama/7B")
+            ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/lit-llama.pth")
+            
             print(f"Initializing from OG weights: {ckpt_path}")
-            # initialize from Meta OG weights
-            override_args = dict(dropout=dropout, learning_block=learning_block, influence=influence)
 
             with open(Path(ckpt_dir) / "params.json", "r") as f:
                 params = json.loads(f.read())
 
-            model_args['vocab_size'] = 32000
             model_args['n_layers'] = params['n_layers']
             model_args['n_heads'] = params['n_heads']
-            model_args['n_embed'] = params['dim']
-
-            print(model_args)
-
-
+            model_args['n_embd'] = params['dim']
+            
             conf = LLaMAConf(**model_args)
-            t = time.time()
-            # with torch.device("meta"):
-            model = LLaMA(conf)
-            print("Time to create model: ", time.time() - t)
+            with time_gpu(device, "Creating model"):
+                model = LLaMA(conf)
                 
-            if load_state_dict:
-                print("Loading state dict...")
+            with time_gpu(device, "Loading state dict"):
                 weights = torch.load(ckpt_path, map_location='cpu')
-                model.load_state_dict(weights)
+                model.load_state_dict(weights, strict=False)
 
 
     print("Time to load model: ", time.time() - start_time)
     return model, model_args
 
 
-def get_tokenizer(model_type, meta_vocab_size=None):
+def get_tokenizer(model_type):
+    
     if model_type == 'gpt2':
         # ok let's assume gpt-2 encodings by default
         print("No meta.pkl found, assuming GPT-2 encodings...")
@@ -226,7 +251,9 @@ def get_tokenizer(model_type, meta_vocab_size=None):
         decode = lambda l: enc.decode(l)
 
     elif model_type == 'llama':
-        tokenizer_path = "/home/li/basu_workspace/llama/tokenizer.model"
+
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
         tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
         encode = lambda s: tokenizer.encode(s, bos=True, eos=False)
         decode = lambda l: tokenizer.decode(l)
@@ -238,6 +265,7 @@ def configure_optimizers(model, weight_decay, learning_rate, betas, device_type)
     param_dict = {pn: p for pn, p in model.named_parameters()}
     # filter out those that do not require grad
     param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+    print(param_dict.keys())    
     # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
     # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
     decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]

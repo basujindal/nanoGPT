@@ -7,3 +7,5 @@ wandb
 *.pth
 *.bin
 models
+out
+lit-llama

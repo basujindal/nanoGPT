@@ -25,8 +25,7 @@ class LLaMAConf:
     padded_vocab_size: Optional[int] = None
     n_layers: int = 32
     n_heads: int = 32
-    n_embed: int = 4096
-
+    n_embd: int = 4096
     max_seq_len: int = 2048
 
     learning_block: bool = False # set to True if you want to add a linear layer before q in self-attention
@@ -43,10 +42,10 @@ class LLaMAConf:
 
 
 llama_configs = {
-    "7B": dict(n_layers=32, n_heads=32, n_embed=4096),
-    "13B": dict(n_layers=40, n_heads=40, n_embed=5120),
-    "30B": dict(n_layers=60, n_heads=52, n_embed=6656),
-    "65B": dict(n_layers=80, n_heads=64, n_embed=8192),
+    "7B": dict(n_layers=32, n_heads=32, n_embd=4096),
+    "13B": dict(n_layers=40, n_heads=40, n_embd=5120),
+    "30B": dict(n_layers=60, n_heads=52, n_embd=6656),
+    "65B": dict(n_layers=80, n_heads=64, n_embd=8192),
 }
 
 
@@ -54,14 +53,14 @@ class LLaMA(nn.Module):
     def __init__(self, config: LLaMAConf) -> None:
         super().__init__()
         assert config.padded_vocab_size is not None
-        self.config = config
-
-        self.lm_head = nn.Linear(config.n_embed, config.padded_vocab_size, bias=False)
+        self.config = config        
+    
+        self.lm_head = nn.Linear(config.n_embd, config.padded_vocab_size, bias=False)
         self.transformer = nn.ModuleDict(
             dict(
-                wte=nn.Embedding(config.padded_vocab_size, config.n_embed),
+                wte=nn.Embedding(config.padded_vocab_size, config.n_embd),
                 h=nn.ModuleList(Block(config) for _ in range(config.n_layers)),
-                ln_f=RMSNorm(config.n_embed),
+                ln_f=RMSNorm(config.n_embd),
             )
         )
 
@@ -101,14 +100,14 @@ class LLaMA(nn.Module):
             mask = self.mask_cache[:, :, :T, :T]
 
         # forward the model itself
-        x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embed)
+        x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
 
         if input_pos is None:  # proxy for use_cache=False
             for block in self.transformer.h:
                 x, _ = block(x, rope, mask, max_seq_length)
         else:
             if not self.kv_caches:
-                head_size = self.config.n_embed // self.config.n_heads
+                head_size = self.config.n_embd // self.config.n_heads
                 cache_shape = (B, self.config.n_heads, max_seq_length, head_size)
                 self.kv_caches = [
                     (torch.zeros(cache_shape, device=x.device, dtype=x.dtype), torch.zeros(cache_shape, device=x.device, dtype=x.dtype))
@@ -130,7 +129,7 @@ class LLaMA(nn.Module):
     def build_rope_cache(self, idx: torch.Tensor) -> RoPECache:
         return build_rope_cache(
             seq_len=self.config.block_size,
-            n_elem=self.config.n_embed // self.config.n_heads,
+            n_elem=self.config.n_embd // self.config.n_heads,
             dtype=idx.dtype,
             device=idx.device,
         )
@@ -174,9 +173,9 @@ class LLaMA(nn.Module):
 class Block(nn.Module):
     def __init__(self, config: LLaMAConf) -> None:
         super().__init__()
-        self.rms_1 = RMSNorm(config.n_embed)
+        self.rms_1 = RMSNorm(config.n_embd)
         self.attn = CausalSelfAttention(config)
-        self.rms_2 = RMSNorm(config.n_embed)
+        self.rms_2 = RMSNorm(config.n_embd)
         self.mlp = MLP(config)
 
     def forward(
@@ -197,16 +196,23 @@ class Block(nn.Module):
 class CausalSelfAttention(nn.Module):
     def __init__(self, config: LLaMAConf) -> None:
         super().__init__()
-        assert config.n_embed % config.n_heads == 0
+        assert config.n_embd % config.n_heads == 0
+        self.influnce = config.influence
 
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embed, 3 * config.n_embed, bias=False)
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=False)
         # output projection
-        self.c_proj = nn.Linear(config.n_embed, config.n_embed, bias=False)
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=False)
 
         self.n_heads = config.n_heads
-        self.n_embed = config.n_embed
+        self.n_embd = config.n_embd
         self.block_size = config.block_size
+        self.learning_block = config.learning_block
+        
+        # learning block
+        if config.learning_block:
+            self.learning_block_enc = nn.Linear(config.n_embd, 512)
+            self.learning_block_dec = nn.Linear(512, config.n_embd)
 
     def forward(
         self,
@@ -217,10 +223,16 @@ class CausalSelfAttention(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
         kv_cache: Optional[KVCache] = None,
     ) -> Tuple[torch.Tensor, Optional[KVCache]]:
-        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embed)
+        B, T, C = x.size()  # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v = self.c_attn(x).split(self.n_embed, dim=2)
+        q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
+        
+        ## learning block
+        if self.learning_block:
+            _v = self.learning_block_enc(x)
+            _v = self.learning_block_dec(_v)
+            v = v * (1 - self.influnce) + _v * self.influnce
 
         head_size = C // self.n_heads
         k = k.view(B, T, self.n_heads, head_size)
@@ -229,6 +241,7 @@ class CausalSelfAttention(nn.Module):
 
         q = apply_rope(q, rope)
         k = apply_rope(k, rope)
+    
 
         k = k.transpose(1, 2)  # (B, nh, T, hs)
         q = q.transpose(1, 2)  # (B, nh, T, hs)
@@ -266,13 +279,13 @@ class CausalSelfAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config: LLaMAConf) -> None:
         super().__init__()
-        hidden_dim = 4 * config.n_embed
+        hidden_dim = 4 * config.n_embd
         n_hidden = int(2 * hidden_dim / 3)
         n_hidden = find_multiple(n_hidden, 256)
 
-        self.c_fc1 = nn.Linear(config.n_embed, n_hidden, bias=False)
-        self.c_fc2 = nn.Linear(config.n_embed, n_hidden, bias=False)
-        self.c_proj = nn.Linear(n_hidden, config.n_embed, bias=False)
+        self.c_fc1 = nn.Linear(config.n_embd, n_hidden, bias=False)
+        self.c_fc2 = nn.Linear(config.n_embd, n_hidden, bias=False)
+        self.c_proj = nn.Linear(n_hidden, config.n_embd, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.silu(self.c_fc1(x)) * self.c_fc2(x)

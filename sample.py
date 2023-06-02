@@ -1,20 +1,17 @@
 """
 Sample from a trained model
 """
-import os
-import pickle
+
 from contextlib import nullcontext
 import torch
-import tiktoken
-from utils import load_model, get_tokenizer
-from llamaTokenizer import LLaMAtokenizer
+from utils import load_model, get_tokenizer, print_gpu_utilization, time_gpu
 
 # -----------------------------------------------------------------------------
-init_from = ['resume', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
-out_dir = '/home/li/basu_workspace/nanoGPT/harrypotter-learning-block_1684388718.5518227' # ignored if init_from is not 'resume'
+init_from = ['resume', 'resume_llama', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
+out_dir = "/home/li/basu_workspace/nanoGPT/out/shakespeare_finetune_1685411428.4683979/tensor(2.0312)_ckpt.pt"
 start = "User: Capital of France? \n Bot: Paris \n User: Capital of India \n Bot:"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples =  3  # number of samples to draw
-max_new_tokens = 10 # number of tokens generated in each sample
+max_new_tokens = 200 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
 top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
 seed = 1337
@@ -29,8 +26,8 @@ influence = 0
 
 model_type = 'llama' if 'llama' in init_from else 'gpt2'
 
-# sampling = "continuous"
-sampling = "discrete"
+sampling = "continuous"
+# sampling = "discrete"
 
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
@@ -50,32 +47,37 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
 model.eval()
-model.to(device)
+
+with time_gpu('move model to device'):
+    model.to(device)
+
+print_gpu_utilization()
 
 if compile:
     model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
 
 # tokenizer
-encode, decode = get_tokenizer(model_type, model_args)
+encode, decode = get_tokenizer(model_type)
 
 if sampling == "discrete":
     # encode the beginning of the prompt
     if start.startswith('FILE:'):
         with open(start[5:], 'r', encoding='utf-8') as f:
             start = f.read()
+            
+    start_ids = encode(start)
+    tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     # run generation
     with torch.no_grad():
         with ctx:
             for k in range(num_samples):
-                print("generating sample", k+1, "of", num_samples)
-
-                start_ids = encode(start)
-                tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-                y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
-                print(decode(y[0].tolist()))
-                print('---------------')
+                with time_gpu('generate'):
+                    print("generating sample", k+1, "of", num_samples)
+                    y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
+                    print(decode(y[0].tolist()))
+                    print('---------------')
 
 
 if sampling == "continuous":
@@ -91,9 +93,9 @@ if sampling == "continuous":
         with torch.no_grad():
             with ctx:
                 for k in range(num_samples):
-                    print("Sample", k+1, "------------------------------------")
-                    
-                    y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
-                    print(decode(y[0].tolist()))
-                    print('---------------')
+                    with time_gpu('Time to generate'):
+                        print("Sample", k+1, "------------------------------------")
+                        y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
+                        print(decode(y[0].tolist()))
+                        print('---------------')
                     

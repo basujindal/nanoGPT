@@ -6,7 +6,7 @@ wandb_log = True # feel free to turn on
 wandb_project = 'learning-block'
 
 
-wandb_run_name = 'ft_llama_shakespeare' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+wandb_run_name = 'lb2_llama_shakespeare' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
 dataset = 'llama_shakespeare'
 init_from = 'llama'
 
@@ -26,6 +26,6 @@ max_iters = 100
 # finetune at constant LR
 learning_rate = 3e-5
 decay_lr = False
-learning_block = False
+learning_block = True
 
 compile = False
