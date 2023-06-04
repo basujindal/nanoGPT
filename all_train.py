@@ -114,6 +114,12 @@ data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', dat
 train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
 val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
 
+if dataset == 'dolly':
+    mask_data = np.memmap(os.path.join(data_dir, 'seq_lens.bin'), dtype=np.bool, mode='r')
+    train_data = train_data.reshape(-1, block_size)
+    val_data = val_data.reshape(-1, block_size)
+    mask_data = mask_data.reshape(train_data.shape[0], -1)
+
 
 print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
 

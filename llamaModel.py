@@ -75,8 +75,8 @@ class LLaMA(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02 / math.sqrt(2 * self.config.n_layers))
 
     def forward(
-        self, idx: torch.Tensor, max_seq_length: Optional[int] = None, input_pos: Optional[torch.Tensor] = None
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[KVCache]]]:
+        self, idx: torch.Tensor, max_seq_length: Optional[int] = None, 
+        input_pos: Optional[torch.Tensor] = None, mask = None) -> Union[torch.Tensor, Tuple[torch.Tensor, List[KVCache]]]:
         B, T = idx.size()
 
         block_size = self.config.block_size
@@ -97,7 +97,8 @@ class LLaMA(nn.Module):
             mask = mask[:, :, :, :max_seq_length]
         else:
             rope = self.rope_cache[:T]
-            mask = self.mask_cache[:, :, :T, :T]
+            if mask is None:
+                mask = self.mask_cache[:, :, :T, :T]
 
         # forward the model itself
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)

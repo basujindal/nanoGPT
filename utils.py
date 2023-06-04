@@ -18,6 +18,15 @@ from llamaTokenizer import LLaMAtokenizer
 
 from pynvml import *
 
+def make_mask(inp):
+    mask = torch.zeros((seq_len, seq_len))
+    ptr = 0
+    for len in inp:
+        if len == 0:
+            break
+        mask[ptr:ptr+len, ptr:ptr+len] = torch.tril(torch.ones((len, len)))
+        ptr += len
+    return mask
 
 def print_gpu_utilization():
     nvmlInit()
@@ -102,14 +111,33 @@ def get_batch(split, block_size, batch_size, device_type, device, train_data, va
     ix = torch.randint(len(data) - block_size, (batch_size,))
     x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
     y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    if device_type == 'cuda':
+    
+    if 'cuda' in device_type:
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
         x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
     else:
         x, y = x.to(device), y.to(device)
     return x, y
 
-
+def get_instruct_batch(split, block_size, batch_size, device_type, device, train_data, val_data, mask_train_data, mask_val_data):
+    
+    data = train_data if split == 'train' else val_data
+    mask_data = mask_train_data if split == 'train' else mask_val_data
+    
+    ix = torch.randint(data.shape[0], (batch_size,))
+    
+    x = torch.stack([torch.from_numpy((data[i][:-1]).astype(np.int64)) for i in ix])
+    y = torch.stack([torch.from_numpy((data[i+1][1:]).astype(np.int64)) for i in ix])
+    mask = torch.stack([torch.from_numpy(make_mask(mask_data[i])) for i in ix])
+    
+    if 'cuda' in device_type:
+        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
+        x, y, mask = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True), mask.pin_memory().to(device, non_blocking=True)
+    else:
+        x, y, mask = x.to(device), y.to(device), mask.to(device)
+    return x, y, mask
+    
+    
 def get_time_str():
     now = datetime.now()
     return now.strftime("%d/%m/%Y/%H:%M")
