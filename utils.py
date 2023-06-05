@@ -18,15 +18,27 @@ from llamaTokenizer import LLaMAtokenizer
 
 from pynvml import *
 
-def make_mask(inp):
-    mask = torch.zeros((seq_len, seq_len))
-    ptr = 0
-    for len in inp:
-        if len == 0:
-            break
-        mask[ptr:ptr+len, ptr:ptr+len] = torch.tril(torch.ones((len, len)))
-        ptr += len
-    return mask
+def find_sub_list(sl,l):
+    results=[]
+    sll=len(sl)
+    for ind in (i for i,e in enumerate(l) if e==sl[0]):
+        if l[ind:ind+sll]==sl:
+            results.append((ind,ind+sll-1))
+
+    return results
+
+def get_pred_idxs(sen, sep = [13, 29933, 327, 29901]):
+    idxs = find_sub_list(sep, sen)
+
+    pred_idxs = []
+    for i in range(len(idxs)):
+        for j in range(idxs[i][1], len(sen)):
+            if sen[j] == 2:
+                pred_idxs += [p for p in range(idxs[i][1], j)]     
+                break
+            
+    return pred_idxs
+
 
 def print_gpu_utilization():
     nvmlInit()
@@ -96,47 +108,69 @@ class Sampler():
         start_ids = self.encode(start)
         self.x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
-    def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200):
+    def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=False, eos_token_id=None):
         # run generation
         with torch.no_grad():
             with self.ctx:
                 for _ in range(num_samples):
-                    y = model.generate(self.x, max_new_tokens, temperature=temperature, top_k=top_k)
+                    y = model.generate(self.x, max_new_tokens, temperature=temperature, top_k=top_k, break_at_eos=break_at_eos, eos_token_id=eos_token_id)
                     print(self.decode(y[0].tolist()))
                     print('---------------')
 
 
-def get_batch(split, block_size, batch_size, device_type, device, train_data, val_data):
-    data = train_data if split == 'train' else val_data
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-    
-    if 'cuda' in device_type:
-        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
-        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
-    else:
-        x, y = x.to(device), y.to(device)
-    return x, y
+def make_mask(inp, seq_len):
+    mask = np.eye((seq_len))
+    ptr = 0
+    for len in inp:
+        if len == 0:
+            break
+        mask[ptr:ptr+len, ptr:ptr+len] = np.tril(np.ones((len, len)))
+        ptr += len
+    return mask
 
-def get_instruct_batch(split, block_size, batch_size, device_type, device, train_data, val_data, mask_train_data, mask_val_data):
+def get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, data_type=None, mask_train = None, mask_val = None, train_on_user_only=False):
     
-    data = train_data if split == 'train' else val_data
-    mask_data = mask_train_data if split == 'train' else mask_val_data
+    if data_type == None:
+        data = train_data if split == 'train' else val_data
+        ix = torch.randint(len(data) - block_size, (batch_size,))
+        x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
+        y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
+        
+        if 'cuda' in device_type:
+            # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
+            x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+        else:
+            x, y = x.to(device), y.to(device)
+        return x, y, None, None
     
-    ix = torch.randint(data.shape[0], (batch_size,))
-    
-    x = torch.stack([torch.from_numpy((data[i][:-1]).astype(np.int64)) for i in ix])
-    y = torch.stack([torch.from_numpy((data[i+1][1:]).astype(np.int64)) for i in ix])
-    mask = torch.stack([torch.from_numpy(make_mask(mask_data[i])) for i in ix])
-    
-    if 'cuda' in device_type:
-        # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
-        x, y, mask = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True), mask.pin_memory().to(device, non_blocking=True)
-    else:
-        x, y, mask = x.to(device), y.to(device), mask.to(device)
-    return x, y, mask
-    
+    elif data_type == 'instruct':
+        
+        data = train_data if split == 'train' else val_data
+        mask_data = mask_train if split == 'train' else mask_val
+        
+        ix = torch.randint(data.shape[0] - 1, (batch_size,))
+        
+        x = torch.stack([torch.from_numpy((data[i][:-1]).astype(np.int64)) for i in ix])
+        y = torch.stack([torch.from_numpy((data[i][1:]).astype(np.int64)) for i in ix])
+        mask = torch.stack([torch.from_numpy(make_mask(mask_data[i], block_size)[:-1, :-1]) for i in ix])
+        ## conver mask to bool
+        mask = mask.bool()
+        
+        pred_idxs = [get_pred_idxs(xx.tolist()) for xx in x]
+        
+        if 'cuda' in device_type:
+            # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
+            x, y, mask = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True), mask.pin_memory().to(device, non_blocking=True)
+        else:
+            x, y, mask = x.to(device), y.to(device), mask.to(device)
+            
+        if train_on_user_only:
+            
+           return x, y, mask, pred_idxs
+            
+        else:    
+            return x, y, mask, None
+
     
 def get_time_str():
     now = datetime.now()
@@ -265,7 +299,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
                 model.load_state_dict(weights, strict=False)
 
 
-    print("Time to load model: ", time.time() - start_time)
+    print("Total time to load model: ", time.time() - start_time)
     return model, model_args
 
 
@@ -283,7 +317,7 @@ def get_tokenizer(model_type):
         file_path = os.path.dirname(os.path.realpath(__file__))
         tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
         tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
-        encode = lambda s: tokenizer.encode(s, bos=True, eos=False)
+        encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
         decode = lambda l: tokenizer.decode(l)
 
     return encode, decode
@@ -292,8 +326,7 @@ def configure_optimizers(model, weight_decay, learning_rate, betas, device_type)
     # start with all of the candidate parameters
     param_dict = {pn: p for pn, p in model.named_parameters()}
     # filter out those that do not require grad
-    param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-    print(param_dict.keys())    
+    param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad} 
     # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
     # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
     decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]

@@ -27,7 +27,7 @@ assert len (encoded) == len(data_cleaned)
 
 encoded = [encoded[i] for i in range(len(encoded)) if len(encoded[i]) < seq_len]
 
-comb = np.zeros((len(encoded), seq_len), dtype=np.int32)
+comb = np.ones((len(encoded), seq_len), dtype=np.int32)*2
 j = 0
 k = 0
 sen_lens = []
@@ -51,17 +51,28 @@ for i in range(len(comb)):
 comb = comb[:num_sen]
 
 max_len = max([len(i) for i in sen_lens])
-## pad sen_lens with zeros
-sen_lens = [i + [0]*(max_len - len(i)) for i in sen_lens]
-sen_lens = [item for sublist in sen_lens for item in sublist]
+## pad sen_lens with two ## eos_token_id
+sen_lens = [i + [2]*(max_len - len(i)) for i in sen_lens]
 
-train_ids = comb[:int(train_frac*len(encoded))]
-val_ids = comb[int(train_frac*len(encoded)):]
+inp_shape_train = sen_lens[:int(train_frac*len(comb))]
+inp_shape_val = sen_lens[int(train_frac*len(comb)):]
+
+train_ids = comb[:int(train_frac*len(comb))]
+val_ids = comb[int(train_frac*len(comb)):]
+
+assert train_ids.shape[0] == len(inp_shape_train)
+assert val_ids.shape[0] == len(inp_shape_val)
+
+inp_shape_train = [item for sublist in inp_shape_train for item in sublist]
+inp_shape_val = [item for sublist in inp_shape_val for item in sublist]
 
 # export to bin files
 train_ids = np.array(train_ids, dtype=np.uint16)
 val_ids = np.array(val_ids, dtype=np.uint16)
-sen_lens = np.array(sen_lens, dtype=np.uint16)
+inp_shape_train = np.array(inp_shape_train, dtype=np.uint16)
+inp_shape_val = np.array(inp_shape_val, dtype=np.uint16)
+
 train_ids.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/train.bin')
 val_ids.tofile( '/home/li/basu_workspace/nanoGPT/data/dolly/val.bin')
-sen_lens.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/sen_lens.bin')
+inp_shape_train.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/inp_shape_train.bin')
+inp_shape_val.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/inp_shape_val.bin')
