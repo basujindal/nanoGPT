@@ -148,7 +148,7 @@ class LLaMA(nn.Module):
 
     
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, break_at_eos=False, eos_token_id=None):
 
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
@@ -167,6 +167,10 @@ class LLaMA(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
+            
+            if break_at_eos and idx_next.item() == eos_token_id:
+                print("breaking at eos")
+                break
 
         return idx
 

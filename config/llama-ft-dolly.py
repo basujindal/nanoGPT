@@ -8,7 +8,7 @@ wandb_project = 'learning-block'
 sample_start = "User: Write a few words on Einstein.\nBot:"
 max_new_tokens = 100
 
-wandb_run_name = 'lb2_llama_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+wandb_run_name = 'ft_llama_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
 dataset = 'dolly'
 init_from = 'llama'
 
@@ -25,11 +25,11 @@ batch_size = 1
 gradient_accumulation_steps = 32
 max_iters = 100
 
-learning_block = True
+learning_block = False
 
-learning_rate = 3e-4
+learning_rate = 3e-5
 lr_decay_iters = max_iters
-decay_lr = True
+decay_lr = False
 warmup_iters = max_iters // 10
 
 compile = False

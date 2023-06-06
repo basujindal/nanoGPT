@@ -8,8 +8,8 @@ from utils import load_model, get_tokenizer, print_gpu_utilization, time_gpu
 
 # -----------------------------------------------------------------------------
 init_from = ['resume', 'resume_llama', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
-out_dir = "/home/li/basu_workspace/nanoGPT/out/shakespeare_finetune_1685411428.4683979/tensor(2.0312)_ckpt.pt"
-start = "User: Capital of France? \n Bot: Paris \n User: Capital of India \n Bot:"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+out_dir = "/home/li/basu_workspace/cptData/out/lb2_llama_dolly_0605-2223/ckpt.pt"
+start = "User: Capital of France?\n"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples =  3  # number of samples to draw
 max_new_tokens = 200 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
@@ -21,13 +21,13 @@ compile = False # use PyTorch 2.0 to compile the model to be faster
 
 # learning block
 learning_block = True
-influence = 0
+influence = 0.5
 # -----------------------------------------------------------------------------
 
 model_type = 'llama' if 'llama' in init_from else 'gpt2'
 
-sampling = "continuous"
-# sampling = "discrete"
+sampling = "format" # "discrete" or "continuous" or "format"
+
 
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
@@ -60,12 +60,7 @@ if compile:
 # tokenizer
 encode, decode = get_tokenizer(model_type)
 
-if sampling == "discrete":
-    # encode the beginning of the prompt
-    if start.startswith('FILE:'):
-        with open(start[5:], 'r', encoding='utf-8') as f:
-            start = f.read()
-            
+def sample(start):
     start_ids = encode(start)
     tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
@@ -73,29 +68,34 @@ if sampling == "discrete":
     with torch.no_grad():
         with ctx:
             for k in range(num_samples):
-                with time_gpu('generate'):
-                    print("generating sample", k+1, "of", num_samples)
+                with time_gpu('Time to generate'):
+                    print("Sample", k+1, "------------------------------------")
                     y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
                     print(decode(y[0].tolist()))
                     print('---------------')
+                        
+                        
+if sampling == "discrete":
+    # encode the beginning of the prompt
+    if start.startswith('FILE:'):
+        with open(start[5:], 'r', encoding='utf-8') as f:
+            start = f.read()
+            sample(start)
 
 
-if sampling == "continuous":
-
+elif sampling == "continuous":
     while True:
         ## take input
         print("Enter a sentence to continue:")
         start = str(input())
-        start_ids = encode(start)
-        tkns = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-
-        # run generation
-        with torch.no_grad():
-            with ctx:
-                for k in range(num_samples):
-                    with time_gpu('Time to generate'):
-                        print("Sample", k+1, "------------------------------------")
-                        y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
-                        print(decode(y[0].tolist()))
-                        print('---------------')
+        sample(start)
+        
+elif sampling == "format":
+    while True:
+        ## take input
+        print("Enter a sentence to continue:")
+        start = str(input())
+        start = "User: " + start + ".\nBot: "
+        sample(start)
+    
                     
