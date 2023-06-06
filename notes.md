@@ -26,6 +26,12 @@ python all_train.py config/llama-lb-dolly.py
 
 wget blob:https://download-directory.github.io/4f3436ac-7be1-479c-afdb-9a9888857520
 
+## Instruct
+
+### cleaned Alpaca
+
+`wget https://huggingface.co/datasets/yahma/alpaca-cleaned/resolve/main/alpaca_data_cleaned.json`
+
 
 ## Ideas
 

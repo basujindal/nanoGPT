@@ -22,10 +22,13 @@ compile = False # use PyTorch 2.0 to compile the model to be faster
 # learning block
 learning_block = True
 influence = 0.5
+
+## sampling
+break_at_eos = True
+eos_token_id = 2
 # -----------------------------------------------------------------------------
 
 model_type = 'llama' if 'llama' in init_from else 'gpt2'
-
 sampling = "format" # "discrete" or "continuous" or "format"
 
 
@@ -70,7 +73,9 @@ def sample(start):
             for k in range(num_samples):
                 with time_gpu('Time to generate'):
                     print("Sample", k+1, "------------------------------------")
-                    y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k)
+                    y = model.generate(tkns, max_new_tokens, temperature=temperature, top_k=top_k,
+                                       break_at_eos=break_at_eos, eos_token_id=eos_token_id)
+                                       
                     print(decode(y[0].tolist()))
                     print('---------------')
                         

@@ -6,16 +6,16 @@ import json
 pth = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.append(pth)
 from llamaTokenizer import LLaMAtokenizer
-tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/llama/tokenizer.model")
+tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/lit-llama/tokenizer.model")
 train_frac = 0.9
-seq_len = 2048.
-
+seq_len = 2048
+dataset = 'dolly'
 
 tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
 enc = lambda s: tokenizer.encode(s, bos=False, eos=True)
 dec = lambda s: tokenizer.decode(s)
 
-with open('/home/li/basu_workspace/nanoGPT/data/dolly/databricks-dolly-15k.jsonl') as f:
+with open(os.path.join(pth, 'data/dolly/databricks-dolly-15k.jsonl')) as f:
     data = f.readlines()
     
 data = [json.loads(line) for line in data]
@@ -27,12 +27,11 @@ for sentence in data_cleaned:
 assert len (encoded) == len(data_cleaned)
 
 encoded = [encoded[i] for i in range(len(encoded)) if len(encoded[i]) < seq_len]
-
 comb = np.ones((len(encoded), seq_len), dtype=np.int32)*2 ## pad with eos_token_id
-j = 0
-k = 0
-sen_lens = []
-l = []
+
+j, k = 0, 0
+sen_lens, l = [], []
+
 for i in encoded:
     if k + len(i) > seq_len:
         sen_lens.append(l)
@@ -76,7 +75,7 @@ val_ids = np.array(val_ids, dtype=np.uint16)
 inp_shape_train = np.array(inp_shape_train, dtype=np.uint16)
 inp_shape_val = np.array(inp_shape_val, dtype=np.uint16)
 
-train_ids.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/train.bin')
-val_ids.tofile( '/home/li/basu_workspace/nanoGPT/data/dolly/val.bin')
-inp_shape_train.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/inp_shape_train.bin')
-inp_shape_val.tofile('/home/li/basu_workspace/nanoGPT/data/dolly/inp_shape_val.bin')
+train_ids.tofile(os.path.join(pth, 'data/{dataset}/train.bin'.format(dataset=dataset)))
+val_ids.tofile( os.path.join(pth, 'data/{dataset}/val.bin'.format(dataset=dataset)))
+inp_shape_train.tofile(os.path.join(pth, 'data/{dataset}/inp_shape_train.bin'.format(dataset=dataset)))
+inp_shape_val.tofile(os.path.join(pth, 'data/{dataset}/inp_shape_val.bin'.format(dataset=dataset)))

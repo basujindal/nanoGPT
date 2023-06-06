@@ -37,4 +37,4 @@ compile = False
 break_at_eos = False
 eos_token_id = 2
 
-train_on_user_only = True
+train_on_user_only = False

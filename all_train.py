@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import trange
 import torch
 import torch.nn.functional as F
+# from torcheval.metrics.text import Perplexity
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
@@ -188,6 +189,7 @@ if ddp:
 
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
+# metric_perplexity = Perplexity()
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
 def estimate_loss():
@@ -205,16 +207,16 @@ def estimate_loss():
                 
             with ctx:
                 logits = model(X, mask = mask)
-                
-            ## logtis shape: (batch_size, block_size, vocab_size)
-                
+                                
             if train_on_user_only:
-                logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
+            # perplexity = metric_perplexity(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
+        
     model.train()
     return out
 
@@ -294,7 +296,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
                 logits = model(X, mask = mask)
                 
             if train_on_user_only:
-                logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
