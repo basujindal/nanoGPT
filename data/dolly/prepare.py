@@ -51,8 +51,8 @@ for i in range(len(comb)):
 comb = comb[:num_sen]
 
 max_len = max([len(i) for i in sen_lens])
-## pad sen_lens with two ## eos_token_id
-sen_lens = [i + [2]*(max_len - len(i)) for i in sen_lens]
+
+sen_lens = [i + [0]*(max_len - len(i)) for i in sen_lens]
 
 inp_shape_train = sen_lens[:int(train_frac*len(comb))]
 inp_shape_val = sen_lens[int(train_frac*len(comb)):]
@@ -62,6 +62,9 @@ val_ids = comb[int(train_frac*len(comb)):]
 
 assert train_ids.shape[0] == len(inp_shape_train)
 assert val_ids.shape[0] == len(inp_shape_val)
+
+print("train_ids.shape: ", train_ids.shape)
+print("val_ids.shape: ", val_ids.shape)
 
 inp_shape_train = [item for sublist in inp_shape_train for item in sublist]
 inp_shape_val = [item for sublist in inp_shape_val for item in sublist]

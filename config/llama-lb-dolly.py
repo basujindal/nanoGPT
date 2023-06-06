@@ -23,7 +23,7 @@ always_save_checkpoint = False
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
 batch_size = 1
 gradient_accumulation_steps = 32
-max_iters = 500
+max_iters = 100
 
 learning_block = True
 
@@ -37,4 +37,4 @@ compile = False
 break_at_eos = False
 eos_token_id = 2
 
-train_on_user_only = False
+train_on_user_only = True
