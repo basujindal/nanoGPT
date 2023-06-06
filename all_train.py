@@ -202,16 +202,17 @@ def estimate_loss():
         for k in range(eval_iters):
             X, Y, mask, pred_idxs = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, 
                                    data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
-            
-            if train_on_user_only:
-                logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2)).squeeze(2)
-                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
                 
             with ctx:
                 logits = model(X, mask = mask)
                 
+            ## logtis shape: (batch_size, block_size, vocab_size)
                 
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+            if train_on_user_only:
+                logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()
@@ -292,12 +293,12 @@ for iter_num in range(iter_num_resume, max_iters+1):
             with ctx:
                 logits = model(X, mask = mask)
                 
-                if train_on_user_only:
-                    logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2)).squeeze(2)
-                    Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
-                
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
-                loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+            if train_on_user_only:
+                logits = logits.gather(2, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
                 
             # immediately async prefetch next batch while model is doing the forward pass on the GPU
             X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,

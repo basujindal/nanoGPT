@@ -2,12 +2,13 @@ import numpy as np
 import sys
 import os
 import json
-sys.path.append('/home/li/basu_workspace/nanoGPT')
-from llamaTokenizer import LLaMAtokenizer
 
-tokenizer_path = "/home/li/basu_workspace/llama/tokenizer.model"
+pth = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+sys.path.append(pth)
+from llamaTokenizer import LLaMAtokenizer
+tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/llama/tokenizer.model")
 train_frac = 0.9
-seq_len = 2048
+seq_len = 2048.
 
 
 tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
