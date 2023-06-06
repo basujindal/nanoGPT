@@ -13,7 +13,7 @@ ssh-add ~/.ssh/id_rsa_basu
 cd ~/basu_workspace/nanoGPT
 export WANDB_API_KEY=84742742b66deb0de22b5dfec52ec1f23a539d9b
 . activate basu
-python all_train.py config/llama-lb-dolly.py
+python all_train.py config/llama-lb-instruct.py
 ```
 
 `scp -r li@ecepxiegpu1.ucsd.edu:basu_workspace/nanoGPT .`

@@ -19,7 +19,7 @@ with open(os.path.join(pth, 'data/dolly/databricks-dolly-15k.jsonl')) as f:
     data = f.readlines()
     
 data = [json.loads(line) for line in data]
-data_cleaned  = ["User: " + instruct['instruction'] + "\nBot: " + instruct['response'] for instruct in data]
+data_cleaned  = ["###User: " + instruct['instruction'] + "\n###Bot: " + instruct['response'] for instruct in data]
 
 encoded = []
 for sentence in data_cleaned:

@@ -5,11 +5,11 @@ eval_iters = 40
 wandb_log = True # feel free to turn on
 wandb_project = 'learning-block'
 
-sample_start = "User: Write a few words on Einstein.\nBot:"
+sample_start = "###User: Write a few words on Einstein.\n###Bot:"
 max_new_tokens = 100
 
 wandb_run_name = 'lb2_llama_instruct' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'dolly'
+dataset = 'instruct2'
 init_from = 'llama'
 
 data_type = 'instruct'
@@ -21,16 +21,17 @@ always_save_checkpoint = False
 # the number of examples per iter:
 # 1 batch_size * 32 grad_accum * 1024 tokens = 32,768 tokens/iter
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
-batch_size = 1
+batch_size = 2
 gradient_accumulation_steps = 32
-max_iters = 100
+max_iters = 7500
 
 learning_block = True
+device = 'cuda:1'
 
 learning_rate = 3e-4
-lr_decay_iters = max_iters
+lr_decay_iters = 1000
 decay_lr = True
-warmup_iters = max_iters // 10
+warmup_iters = 20
 
 compile = False
 

@@ -100,7 +100,7 @@ elif sampling == "format":
         ## take input
         print("Enter a sentence to continue:")
         start = str(input())
-        start = "User: " + start + ".\nBot: "
+        start = "###User: " + start + ".\n###Bot: "
         sample(start)
     
                     

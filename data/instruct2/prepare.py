@@ -4,8 +4,9 @@ import os
 import json
 from tqdm import trange
 
-pth = os.path.dirname(os.path.dirname(os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))))
+pth = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+print(pth)
 ###################################################################################################                          
 
 ## alpaca cleaned
@@ -27,6 +28,17 @@ print("Number of examples in dolly: ", len(data_cleaned_dolly))
 
 data_cleaned += data_cleaned_dolly
 
+## gpt4all
+from datasets import load_dataset
+
+data = load_dataset("nomic-ai/gpt4all-j-prompt-generations", revision='v1.3-groovy')
+data_cleaned_gpt4all  = ["###User: " + instruct['prompt'] + "\n###Bot: " + instruct['response'] for instruct in data['train']]
+
+print("Number of examples in gpt4all: ", len(data_cleaned_gpt4all))
+
+data_cleaned += data_cleaned_gpt4all
+
+print("Total number of examples: ", len(data_cleaned))
 ############################################################################################################
 
 sys.path.append(pth)
@@ -36,7 +48,7 @@ tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/lit-llama/tokenizer
 
 train_frac = 0.9
 seq_len = 2048
-dataset = 'instruct'
+dataset = 'instruct2'
 
 tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
 enc = lambda s: tokenizer.encode(s, bos=False, eos=True)

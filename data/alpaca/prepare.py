@@ -21,7 +21,7 @@ tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
 enc = lambda s: tokenizer.encode(s, bos=False, eos=True)
 dec = lambda s: tokenizer.decode(s)
 
-data_cleaned  = ["User: " + instruct['input'] + "\n" + instruct['instruction'] + "\nBot: " + instruct['output'] for instruct in data]
+data_cleaned  = ["###User: " + instruct['input'] + "\n" + instruct['instruction'] + "\n###Bot: " + instruct['output'] for instruct in data]
 
 encoded = [enc(data_cleaned[i]) for i in trange(len(data_cleaned))]
 assert len (encoded) == len(data_cleaned)

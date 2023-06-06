@@ -273,6 +273,26 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             with time_gpu(device, "Loading state dict"):
                 model.load_state_dict(state_dict)
 
+        elif init_from = "llama7B":
+
+            ## get current file path
+            file_path = os.path.dirname(os.path.realpath(__file__))
+
+            ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/model.pt")
+            
+            print(f"Initializing from OG weights: {ckpt_path}")
+
+            with open(Path(ckpt_dir) / "params.json", "r") as f:
+                params = json.loads(f.read())
+
+            model_args['n_layers'] = params['n_layers']
+            model_args['n_heads'] = params['n_heads']
+            model_args['n_embd'] = params['dim']
+                
+            with time_gpu(device, "Loading state dict"):
+                model = torch.load(ckpt_path, map_location=device)
+
+
         elif init_from.startswith('llama'):
 
             ## get current file path

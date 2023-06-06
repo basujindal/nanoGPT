@@ -5,7 +5,7 @@ eval_iters = 40
 wandb_log = True # feel free to turn on
 wandb_project = 'learning-block'
 
-sample_start = "User: Write a few words on Einstein.\nBot:"
+sample_start = "###User: Write a few words on Einstein.\n###Bot:"
 max_new_tokens = 100
 
 wandb_run_name = 'lb2_llama_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset

@@ -70,6 +70,7 @@ data_type = None
 break_at_eos=False
 eos_token_id=1
 train_on_user_only = False
+
 # -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -124,7 +125,7 @@ val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r
 print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
 
 
-if dataset == 'dolly':
+if data_type == 'instruct':
     mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train.bin'), dtype=np.uint16, mode='r')
     mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val.bin'), dtype=np.uint16, mode='r')
     train_data = train_data.reshape(-1, block_size)
