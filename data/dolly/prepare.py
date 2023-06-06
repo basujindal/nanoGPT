@@ -27,7 +27,7 @@ assert len (encoded) == len(data_cleaned)
 
 encoded = [encoded[i] for i in range(len(encoded)) if len(encoded[i]) < seq_len]
 
-comb = np.ones((len(encoded), seq_len), dtype=np.int32)*2
+comb = np.ones((len(encoded), seq_len), dtype=np.int32)*2 ## pad with eos_token_id
 j = 0
 k = 0
 sen_lens = []
@@ -44,7 +44,7 @@ for i in encoded:
     comb[j, k-len(i):k] = i
 
 for i in range(len(comb)):
-    if np.sum(comb[i]) == 0:
+    if np.all(comb[i] == 2):
         num_sen = i-1
         break
 
