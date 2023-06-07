@@ -260,7 +260,8 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
         elif init_from == 'eval_llama':
 
             with time_gpu(device, "Loading checkpoint"):
-                checkpoint = torch.load(out_dir, map_location=device)
+                ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+                checkpoint = torch.load(ckpt_path, map_location=device)
 
             model_args = checkpoint['model_args']
             conf = LLaMAConf(**model_args)

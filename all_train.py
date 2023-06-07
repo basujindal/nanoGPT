@@ -194,6 +194,8 @@ if ddp:
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
 perplexity = Perplexity()
+perplexity.to(device)
+
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
 def estimate_loss():
@@ -216,23 +218,23 @@ def estimate_loss():
                 logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-            perplexity.update(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+            perplexity.update(logits, Y)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
         print(f"perplexity on {split} split: {perplexity.compute():.3f}")
-
+        perplexity.reset()
         
     model.train()
     return out
 
 if test_only:
+    print("Testing the model only")
     with time_gpu(device,'Ealuate'):
         losses = estimate_loss()
         
     print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-    return
-
+    exit()
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
