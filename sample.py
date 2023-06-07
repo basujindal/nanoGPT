@@ -7,7 +7,7 @@ import torch
 from utils import load_model, get_tokenizer, print_gpu_utilization, time_gpu
 
 # -----------------------------------------------------------------------------
-init_from = ['resume', 'resume_llama', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
+init_from = ['resume', 'eval_llama', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
 out_dir = "/home/li/basu_workspace/cptData/out/lb2_llama_dolly_0605-2223/ckpt.pt"
 start = "User: Capital of France?\n"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples =  3  # number of samples to draw

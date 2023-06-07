@@ -29,7 +29,7 @@ learning_block = True
 device = 'cuda:1'
 
 learning_rate = 3e-4
-lr_decay_iters = 1000
+lr_decay_iters = 300
 decay_lr = True
 warmup_iters = 20
 

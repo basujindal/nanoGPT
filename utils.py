@@ -257,7 +257,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             with time_gpu(device, "Creating model"):
                 model = LLaMA(conf)
 
-        elif init_from == 'resume_llama':
+        elif init_from == 'eval_llama':
 
             with time_gpu(device, "Loading checkpoint"):
                 checkpoint = torch.load(out_dir, map_location=device)
@@ -273,7 +273,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             with time_gpu(device, "Loading state dict"):
                 model.load_state_dict(state_dict)
 
-        elif init_from = "llama7B":
+        elif init_from == "llama7B":
 
             ## get current file path
             file_path = os.path.dirname(os.path.realpath(__file__))

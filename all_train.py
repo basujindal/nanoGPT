@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import trange
 import torch
 import torch.nn.functional as F
-# from torcheval.metrics.text import Perplexity
+from torcheval.metrics.text import Perplexity
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
@@ -23,7 +23,7 @@ eval_only = False # if True, script exits right after the first eval
 sample_start = "The king exclaimed thou"
 max_new_tokens=100
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
-init_from = 'scratch' # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl' or 'resume_llama' or 'llama'
+init_from = 'scratch' # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl' or 'eval_llama' or 'llama'
 # wandb logging
 wandb_log = False # disabled by default
 wandb_project = "transformers"
@@ -70,6 +70,9 @@ data_type = None
 break_at_eos=False
 eos_token_id=1
 train_on_user_only = False
+
+## testing
+test_only = False
 
 # -----------------------------------------------------------------------------
 
@@ -190,7 +193,7 @@ if ddp:
 
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
-# metric_perplexity = Perplexity()
+perplexity = Perplexity()
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
 def estimate_loss():
@@ -213,13 +216,23 @@ def estimate_loss():
                 logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-            # perplexity = metric_perplexity(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+            perplexity.update(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
+        print(f"perplexity on {split} split: {perplexity.compute():.3f}")
+
         
     model.train()
     return out
+
+if test_only:
+    with time_gpu(device,'Ealuate'):
+        losses = estimate_loss()
+        
+    print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+    return
+
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
@@ -249,7 +262,8 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
-
+        
+        
 print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
 
