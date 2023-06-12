@@ -99,6 +99,8 @@ class LLaMA(nn.Module):
             rope = self.rope_cache[:T]
             if mask is None:
                 mask = self.mask_cache[:, :, :T, :T]
+            else:
+                mask = mask.unsqueeze(1).repeat(1, self.config.n_heads, 1, 1)
 
         # forward the model itself
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
@@ -172,6 +174,7 @@ class LLaMA(nn.Module):
                 print("breaking at eos")
                 break
 
+        
         return idx
 
 
@@ -272,7 +275,6 @@ class CausalSelfAttention(nn.Module):
 
         # efficient attention using Flash Attention CUDA kernels
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
-
         y = y.transpose(1, 2).contiguous().view(B, T, C)  # re-assemble all head outputs side by side
 
         # output projection

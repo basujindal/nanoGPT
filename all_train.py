@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import trange
 import torch
 import torch.nn.functional as F
-from torcheval.metrics.text import Perplexity
+# from torcheval.metrics.text import Perplexity
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
@@ -70,9 +70,6 @@ data_type = None
 break_at_eos=False
 eos_token_id=1
 train_on_user_only = False
-
-## testing
-test_only = False
 
 # -----------------------------------------------------------------------------
 
@@ -193,8 +190,8 @@ if ddp:
 
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
-perplexity = Perplexity()
-perplexity.to(device)
+# perplexity = Perplexity()
+# perplexity.to(device)
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -218,23 +215,15 @@ def estimate_loss():
                 logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-            perplexity.update(logits, Y)
+            # perplexity.update(logits, Y)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
-        print(f"perplexity on {split} split: {perplexity.compute():.3f}")
-        perplexity.reset()
+        # print(f"perplexity on {split} split: {perplexity.compute():.3f}")
+        # perplexity.reset()
         
     model.train()
     return out
-
-if test_only:
-    print("Testing the model only")
-    with time_gpu(device,'Ealuate'):
-        losses = estimate_loss()
-        
-    print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-    exit()
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
