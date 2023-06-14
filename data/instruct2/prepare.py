@@ -32,9 +32,9 @@ data_cleaned_dolly = []
 
 for instruct in data:
     if instruct['context'] == "":
-        data_cleaned.append("###User: " + instruct['instruction'] + "\n###Bot: " + instruct['response'])
+        data_cleaned_dolly.append("###User: " + instruct['instruction'] + "\n###Bot: " + instruct['response'])
     else:
-        data_cleaned.append("###User: " + instruct['context'] + " " + instruct['instruction'] + "\n###Bot: " + instruct['response'])
+        data_cleaned_dolly.append("###User: " + instruct['context'] + " " + instruct['instruction'] + "\n###Bot: " + instruct['response'])
 print("Number of examples in dolly: ", len(data_cleaned_dolly))
 
 data_cleaned += data_cleaned_dolly
@@ -84,7 +84,7 @@ np.random.shuffle(encoded)
 totalTokens=0
 for i in encoded:
     totalTokens+=len(i)
-print("totalTokens: ", totalTokens/1e6, "M")
+print("totalTokens: {:.2f}".format(totalTokens/1e6), "M")
 
 
 num_train = totalTokens//seq_len + 1
@@ -156,6 +156,8 @@ for i in trange(len(sen_lens[-1])):
         ans = i
         break
 sen_lens[-1] = sen_lens[-1][:ans]
+
+sen_lens = [i + [0]*(seq_len - len(i)) for i in sen_lens]
 
 train_lens = sen_lens[:int(train_frac*len(comb))]
 val_lens = sen_lens[int(train_frac*len(comb)):]

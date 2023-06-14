@@ -124,12 +124,16 @@ val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r
 
 print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
 
+print("Train data shape:", train_data.shape, "Val data shape:", val_data.shape)
 
 if data_type == 'instruct':
     mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train.bin'), dtype=np.uint16, mode='r')
     mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val.bin'), dtype=np.uint16, mode='r')
     train_data = train_data.reshape(-1, block_size)
     val_data = val_data.reshape(-1, block_size)
+    
+    print("Train data shape:", train_data.shape, "Mask train:", mask_train.shape, "Val data shape:", val_data.shape, "Mask val:", mask_val.shape)
+    
     mask_train = mask_train.reshape(train_data.shape[0], -1)
     mask_val = mask_val.reshape(val_data.shape[0], -1)
 

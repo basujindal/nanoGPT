@@ -3,7 +3,7 @@ init_from = 'eval_llama'
 
 device = 'cuda:1'
 data_type = 'instruct'
-sample_start = "###User: Write a few words on Einstein.\n\n###Bot:"
+sample_start = "###User: Write a few words on Einstein.\n###Bot:"
 
 # out_dir = "/home/li/basu_workspace/cptData/out/lb2_llama_dolly_0605-2223"
 # learning_block = True
