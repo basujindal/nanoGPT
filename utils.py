@@ -316,7 +316,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
                 model = LLaMA(conf)
                 
             with time_gpu(device, "Loading state dict"):
-                weights = torch.load(ckpt_path, map_location='cpu')
+                weights = torch.load(ckpt_path, map_location=device)
                 model.load_state_dict(weights, strict=False)
 
 
