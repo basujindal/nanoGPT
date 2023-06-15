@@ -7,8 +7,6 @@ import numpy as np
 from tqdm import trange
 import torch
 import torch.nn.functional as F
-# from torcheval.metrics.text import Perplexity
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
 
@@ -29,9 +27,9 @@ wandb_log = False # disabled by default
 wandb_project = "transformers"
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
-dataset = 'openwebtext'
-gradient_accumulation_steps = 1 # used to simulate larger batch sizes
-batch_size = 32 # if gradient_accumulation_steps > 1, this is the micro-batch size
+dataset = 'llava'
+gradient_accumulation_steps = 32 # used to simulate larger batch sizes
+batch_size = 1 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 2048
 # model
 n_layers = 12
@@ -64,11 +62,10 @@ torch.set_default_dtype(ptdtype)
 # learning block
 learning_block = False
 influence = 0.5
-
 ## instruct
 data_type = None
 break_at_eos=False
-eos_token_id=1
+eos_token_id=2
 train_on_user_only = False
 
 # -----------------------------------------------------------------------------
@@ -78,34 +75,11 @@ exec(open('configurator.py').read()) # overrides from command line or config fil
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
-model_type = 'llama' if 'llama' in init_from else 'gpt2'
+model_type = 'llava'
 
-## if torch version < 2 set compile to False
-if torch.__version__[0] == '1' and compile:
-    print("PyTorch version < 2.0, disabling compilation")
-    compile = False
 
 print("Using Learning Block", learning_block)
-
-# various inits, derived attributes, I/O setup
-ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
-if ddp:
-    init_process_group(backend=backend)
-    ddp_rank = int(os.environ['RANK'])
-    ddp_local_rank = int(os.environ['LOCAL_RANK'])
-    ddp_world_size = int(os.environ['WORLD_SIZE'])
-    device = f'cuda:{ddp_local_rank}'
-    torch.cuda.set_device(device)
-    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
-    seed_offset = ddp_rank # each process gets a different seed
-    assert gradient_accumulation_steps % torch.cuda.device_count() == 0
-    gradient_accumulation_steps //= torch.cuda.device_count()
-else:
-    # if not ddp, we are running on a single gpu, and one process
-    master_process = True
-    seed_offset = 0
-    ddp_world_size = 1
-tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+tokens_per_iter = gradient_accumulation_steps * batch_size * block_size
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
@@ -113,69 +87,62 @@ torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
 device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
-# note: float16 data type will automatically use a GradScaler
+
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-# # poor man's data loader
-# data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', dataset)
-# train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
-# val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
-
-# print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
-
-# print("Train data shape:", train_data.shape, "Val data shape:", val_data.shape)
-
-# if data_type == 'instruct':
-#     mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train.bin'), dtype=np.uint16, mode='r')
-#     mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val.bin'), dtype=np.uint16, mode='r')
-#     train_data = train_data.reshape(-1, block_size)
-#     val_data = val_data.reshape(-1, block_size)
-    
-#     print("Train data shape:", train_data.shape, "Mask train:", mask_train.shape, "Val data shape:", val_data.shape, "Mask val:", mask_val.shape)
-    
-#     mask_train = mask_train.reshape(train_data.shape[0], -1)
-#     mask_val = mask_val.reshape(val_data.shape[0], -1)
-
-
 ## load encoded from pickle
 
-encoded = pickle.load(open(os.path.join(pth, '../cptData/llava/encoded.pkl'), 'rb'))
-imgs = pickle.load(open(os.path.join(pth, '../cptData/llava/img_ids.pkl'), 'rb'))
-encoded_imgs = np.memmap(os.path.join(pth, '../cptData/llava/encoded_imgs.bin')), dtype=np.uint16, mode='r')
+encoded = pickle.load(open('../cptData/llava/encoded.pkl', 'rb'))
+img_idxs = pickle.load(open('../cptData/llava/img_idxs.pkl', 'rb'))
+encoded_imgs = torch.load('../cptData/llava/all_features.pt')
 
 train_data = encoded[:int(len(encoded)*0.9)]
 val_data = encoded[int(len(encoded)*0.9):]
-train_imgs = imgs[:int(len(imgs)*0.9)]
-val_imgs = imgs[int(len(imgs)*0.9):]
+train_idxs = img_idxs[:int(len(img_idxs)*0.9)]
+val_idxs = img_idxs[int(len(img_idxs)*0.9):]
 
 
-def get_batch(i, train):
-    if train:
-        return train_data[i], encoded_imgs[train_imgs[i]]
+def get_batch(split, device):
+    if split == 'train':
+        i = random.randint(0, len(train_data)-1)
+        tkns = torch.tensor(train_data[i], device=device)
+        
+        return tkns[:-1], tkns[1:], encoded_imgs[train_idxs[i]].to(device)
     else:
-        return val_data[i],  encoded_imgs[val_imgs[i]]
+        i = random.randint(0, len(val_data)-1)
+        return torch.tensor(val_data[i], device=device),  encoded_imgs[val_idxs[i]].to(device)
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
 best_val_loss = 1e9
 
-# attempt to derive vocab_size from the dataset
-meta_path = os.path.join(data_dir, 'meta.pkl')
-meta_vocab_size = None
-if os.path.exists(meta_path):
-    with open(meta_path, 'rb') as f:
-        meta = pickle.load(f)
-    meta_vocab_size = meta['vocab_size']
-    print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
+## get current file path
+file_path = os.path.dirname(os.path.realpath(__file__))
 
-# model init
-model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
+ckpt_dir = os.path.join(file_path, "../llama/7B")
+ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/lit-llama.pth")
+
+print(f"Initializing from OG weights: {ckpt_path}")
+
+with open(Path(ckpt_dir) / "params.json", "r") as f:
+    params = json.loads(f.read())
+
+model_args['n_layers'] = params['n_layers']
+model_args['n_heads'] = params['n_heads']
+model_args['n_embd'] = params['dim']
+
+conf = LLaMAConf(**model_args)
+with time_gpu(device, "Creating model"):
+    model = LLaMA(conf)
+    
+with time_gpu(device, "Loading state dict"):
+    weights = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(weights, strict=False)
 
 
-model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
-
+print("Total time to load model: ", time.time() - start_time)
+    
 with time_gpu(device, 'model to GPU'):
     model.to(device)
 
@@ -197,24 +164,9 @@ scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
 optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
-# if init_from == 'resume':
-#     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
-
-# compile the model
-if compile:
-    with time_gpu(device, 'compiling model'):
-        print("compiling the model... (takes a ~minute)")
-        model = torch.compile(model) # requires PyTorch 2.0
-
-# wrap model into DDP container
-if ddp:
-    model = DDP(model, device_ids=[ddp_local_rank])
-
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
-# perplexity = Perplexity()
-# perplexity.to(device)
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -228,8 +180,10 @@ def estimate_loss():
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
-            X, Y, mask, pred_idxs = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, 
-                                   data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+            # X, Y, mask, pred_idxs = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, 
+            #                        data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+            
+            X, Y, enc = get_batch(split, device)
                 
             with ctx:
                 logits = model(X, mask = mask)
@@ -268,13 +222,10 @@ if wandb_log and master_process:
     wandb_api_key = "84742742b66deb0de22b5dfec52ec1f23a539d9b"
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
 
-# training loop
-X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
-                       data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+X, Y, enc = get_batch('train', device)
 
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
-raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
         
         
@@ -319,8 +270,6 @@ for iter_num in range(iter_num_resume, max_iters+1):
     with time_gpu(device, 'Training Step'):
         
         for micro_step in range(gradient_accumulation_steps):
-            if ddp:
-                model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
             with ctx:
                 logits = model(X, mask = mask)
                 
@@ -330,10 +279,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
 
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-                
-            # immediately async prefetch next batch while model is doing the forward pass on the GPU
-            X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
-                                   data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+            X, Y, enc = get_batch('train', device)
             
             scaler.scale(loss).backward()
         # clip the gradient
@@ -356,7 +302,4 @@ for iter_num in range(iter_num_resume, max_iters+1):
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
     iter_num += 1
     local_iter_num += 1
-
-if ddp:
-    destroy_process_group()
 
