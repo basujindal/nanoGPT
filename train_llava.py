@@ -280,7 +280,7 @@ def get_lr(it):
 # logging
 if wandb_log:
     import wandb
-    wandb_api_key = "84742742b66deb0de22b5dfec52ec1f23a539d9b"
+    wandb_api_key = ""
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
 
 X, Y, enc = get_batch('train', device)

@@ -273,7 +273,7 @@ def get_lr(it):
 if wandb_log and master_process:
     import wandb
     ## add wandb key
-    wandb_api_key = "84742742b66deb0de22b5dfec52ec1f23a539d9b"
+    wandb_api_key = ""
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
 
 # training loop

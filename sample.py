@@ -8,7 +8,7 @@ from utils import load_model, get_tokenizer, print_gpu_utilization, time_gpu
 
 # -----------------------------------------------------------------------------
 init_from = ['resume', 'eval_llama', 'llama', 'gpt2-small', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'][1] # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl'
-out_dir = "/home/li/basu_workspace/cptData/out/lb2_llama_instruct_0613-1226"
+out_dir = "/data1/li/cptData/out/lb2_llama_instruct_0613-1226"
 start = "###User: Write a few words on Einstein.\n###Bot:" ## Can also specify a file, use as: "FILE:prompt.txt"
 num_samples =  3  # number of samples to draw
 max_new_tokens = 200 # number of tokens generated in each sample
