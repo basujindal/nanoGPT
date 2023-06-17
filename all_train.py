@@ -7,7 +7,6 @@ import numpy as np
 from tqdm import trange
 import torch
 import torch.nn.functional as F
-# from torcheval.metrics.text import Perplexity
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
@@ -19,7 +18,6 @@ out_dir = 'out'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
-eval_only = False # if True, script exits right after the first eval
 sample_start = "The king exclaimed thou"
 max_new_tokens=100
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
@@ -70,6 +68,10 @@ data_type = None
 break_at_eos=False
 eos_token_id=1
 train_on_user_only = False
+
+## eval
+eval_only = False # if True, script exits right after the first eval
+calc_perplexity = False # if True, calculate perplexity
 
 # -----------------------------------------------------------------------------
 
@@ -194,8 +196,10 @@ if ddp:
 
 sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
-# perplexity = Perplexity()
-# perplexity.to(device)
+if calc_perplexity:
+    from torcheval.metrics.text import Perplexity
+    perplexity = Perplexity()
+    perplexity.to(device)
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -219,12 +223,16 @@ def estimate_loss():
                 logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
                 Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-            # perplexity.update(logits, Y)
+            if calc_perplexity:
+                perplexity.update(logits, Y)
+                
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
-        # print(f"perplexity on {split} split: {perplexity.compute():.3f}")
-        # perplexity.reset()
+        
+        if calc_perplexity:
+            print(f"perplexity on {split} split: {perplexity.compute():.3f}")
+            perplexity.reset()
         
     model.train()
     return out
