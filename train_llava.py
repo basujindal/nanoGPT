@@ -1,11 +1,15 @@
 import os
 import time
 import math
+from pathlib import Path
+import json
+import torch
 import pickle
 from contextlib import nullcontext
 import numpy as np
 from tqdm import trange
 import torch
+import random
 import torch.nn.functional as F
 from torch.distributed import init_process_group, destroy_process_group
 from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
@@ -51,6 +55,7 @@ lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
+seed_offset = 0
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
@@ -68,10 +73,54 @@ break_at_eos=False
 eos_token_id=2
 train_on_user_only = False
 
+import time
+eval_interval = 5
+eval_iters = 40
+wandb_log = True
+wandb_project = 'learning-block'
+wandb_run_name = 'llava' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+
+
+sample_start = "###User: Explain the image.\n###Bot:"
+max_new_tokens = 100
+
+dataset = 'llava'
+init_from = 'llava'
+
+data_type = 'llava'
+out_dir = '../cptData/out/' + wandb_run_name 
+
+# only save checkpoints if the validation loss improves
+always_save_checkpoint = False
+
+# the number of examples per iter:
+# 1 batch_size * 32 grad_accum * 1024 tokens = 32,768 tokens/iter
+# shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
+batch_size = 1
+gradient_accumulation_steps = 32
+max_iters = 500//batch_size
+
+learning_block = True
+device = 'cuda'
+
+learning_rate = 3e-4
+lr_decay_iters = 300
+decay_lr = True
+warmup_iters = 20
+
+compile = False
+
+break_at_eos = False
+eos_token_id = 2
+
+train_on_user_only = False
+
+
+
 # -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
-exec(open('configurator.py').read()) # overrides from command line or config file
+# exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
@@ -81,8 +130,7 @@ model_type = 'llava'
 print("Using Learning Block", learning_block)
 tokens_per_iter = gradient_accumulation_steps * batch_size * block_size
 
-if master_process:
-    os.makedirs(out_dir, exist_ok=True)
+os.makedirs(out_dir, exist_ok=True)
 torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
 torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -95,7 +143,7 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 
 encoded = pickle.load(open('../cptData/llava/encoded.pkl', 'rb'))
 img_idxs = pickle.load(open('../cptData/llava/img_idxs.pkl', 'rb'))
-encoded_imgs = torch.load('../cptData/llava/all_features.pt')
+encoded_imgs = torch.load('../cptData/llava/all_features.pt', map_location = device)
 
 train_data = encoded[:int(len(encoded)*0.9)]
 val_data = encoded[int(len(encoded)*0.9):]
@@ -106,66 +154,84 @@ val_idxs = img_idxs[int(len(img_idxs)*0.9):]
 def get_batch(split, device):
     if split == 'train':
         i = random.randint(0, len(train_data)-1)
-        tkns = torch.tensor(train_data[i], device=device)
+        tkns = torch.tensor(train_data[i], device=device).unsqueeze(0)
         
-        return tkns[:-1], tkns[1:], encoded_imgs[train_idxs[i]].to(device)
+        return tkns[:, :-1], tkns[:, 1:], encoded_imgs[train_idxs[i]].to(device).unsqueeze(0)
     else:
         i = random.randint(0, len(val_data)-1)
-        return torch.tensor(val_data[i], device=device),  encoded_imgs[val_idxs[i]].to(device)
+        tkns = torch.tensor(val_data[i], device=device).unsqueeze(0)
+        return tkns[:, :-1], tkns[:, 1:],  encoded_imgs[val_idxs[i]].to(device).unsqueeze(0)
+
+from llava import MultiLLaMA, LLaMAConf
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
 iter_num = 0
 best_val_loss = 1e9
 
 ## get current file path
-file_path = os.path.dirname(os.path.realpath(__file__))
+file_path = os.path.dirname(os.path.realpath("__file__"))
 
 ckpt_dir = os.path.join(file_path, "../llama/7B")
 ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/lit-llama.pth")
 
-print(f"Initializing from OG weights: {ckpt_path}")
 
-with open(Path(ckpt_dir) / "params.json", "r") as f:
-    params = json.loads(f.read())
+# print(f"Initializing from OG weights: {ckpt_path}")
+# with open(Path(ckpt_dir) / "params.json", "r") as f:
+#     params = json.loads(f.read())
+        
+# start_time = time.time()
 
-model_args['n_layers'] = params['n_layers']
-model_args['n_heads'] = params['n_heads']
-model_args['n_embd'] = params['dim']
+# model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, 
+#                         learning_block=learning_block, influence=influence) # start with model_args from command line
 
-conf = LLaMAConf(**model_args)
-with time_gpu(device, "Creating model"):
-    model = LLaMA(conf)
+# model_args['n_layers'] = params['n_layers']
+# model_args['n_heads'] = params['n_heads']
+# model_args['n_embd'] = params['dim']
+
+# conf = LLaMAConf(**model_args)
+# with time_gpu(device, "Creating model"):
+#     model = MultiLLaMA(conf)
     
-with time_gpu(device, "Loading state dict"):
-    weights = torch.load(ckpt_path, map_location=device)
-    model.load_state_dict(weights, strict=False)
+# with time_gpu(device, "Loading state dict"):
+#     weights = torch.load(ckpt_path, map_location=device)
+#     model.load_state_dict(weights, strict=False)
 
 
-print("Total time to load model: ", time.time() - start_time)
+# print("Total time to load model: ", time.time() - start_time)
     
-with time_gpu(device, 'model to GPU'):
-    model.to(device)
+# with time_gpu(device, 'model to GPU'):
+#     model.to(device)
+# torch.save(model, 'model_llava.pt')
 
-## set requires grad to false for all layers except learning block
+    
+with time_gpu(device, 'load directly'):
+    model = torch.load('model_llava.pt', map_location = device)
+
+
+## set requires grad to false for all layers except learning block and img block
 
 if learning_block:
     print("setting requires_grad=False for all layers except learning block")
     for name, param in model.named_parameters():
-        if param.requires_grad:
-            if "learning_block" not in name:
-                param.requires_grad = False
+        if "learning_block" in name:
+            pass
+        elif "img_" in name:
+            pass
+        else:
+            param.requires_grad = False
+
 
 ## total number of parameters that requires grad
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("total params with requires grad", total_params/1e6, "M")
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+scaler = torch.cuda.amp.GradScaler(enabled=False)
 
 # optimizer
 optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
 checkpoint = None # free up memory
-sampler = Sampler(model_name = model_type, start = sample_start, device = device)
+# sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
@@ -175,7 +241,7 @@ def estimate_loss():
     model.eval()
 
     print("Sampling from trained model")
-    sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id) 
+    # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id) 
 
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
@@ -183,14 +249,9 @@ def estimate_loss():
             # X, Y, mask, pred_idxs = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, 
             #                        data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
             
-            X, Y, enc = get_batch(split, device)
-                
+            X, Y, enc = get_batch(split, device)                
             with ctx:
-                logits = model(X, mask = mask)
-                                
-            if train_on_user_only:
-                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
-                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+                logits = model(X, img_enc = enc)
 
             # perplexity.update(logits, Y)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
@@ -217,7 +278,7 @@ def get_lr(it):
     return min_lr + coeff * (learning_rate - min_lr)
 
 # logging
-if wandb_log and master_process:
+if wandb_log:
     import wandb
     wandb_api_key = "84742742b66deb0de22b5dfec52ec1f23a539d9b"
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
@@ -238,7 +299,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % eval_interval == 0 and master_process:
+    if iter_num % eval_interval == 0:
         
         with time_gpu(device,'Ealuate'):
             losses = estimate_loss()
@@ -255,9 +316,9 @@ for iter_num in range(iter_num_resume, max_iters+1):
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
-                    'model': raw_model.state_dict(),
+                    'model': model.state_dict(),
                     # 'optimizer': optimizer.state_dict(),
-                    'model_args': model_args,
+                    # 'model_args': model_args,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                     'config': config,
@@ -271,11 +332,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         
         for micro_step in range(gradient_accumulation_steps):
             with ctx:
-                logits = model(X, mask = mask)
-                
-            if train_on_user_only:
-                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
-                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+                logits = model(X, img_enc = enc)
 
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
@@ -295,11 +352,10 @@ for iter_num in range(iter_num_resume, max_iters+1):
     t1 = time.time()
     dt = t1 - t0
     t0 = t1
-    if iter_num % log_interval == 0 and master_process:
+    if iter_num % log_interval == 0:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
     iter_num += 1
     local_iter_num += 1
-

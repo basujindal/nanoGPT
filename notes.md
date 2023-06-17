@@ -38,3 +38,5 @@ wget blob:https://download-directory.github.io/4f3436ac-7be1-479c-afdb-9a9888857
 - [ ] Try to various influence values (0.1 - 0.9)
 - [ ] Try with K, Q, V
 - [ ] Use same network for K or Q or V or any combination
+
+scp li@ece228-3.ucsd.edu:~/basu_workspace/img_idxs.pkl .

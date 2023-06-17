@@ -49,7 +49,7 @@ llama_configs = {
 }
 
 
-class LLaMA(nn.Module):
+class MultiLLaMA(nn.Module):
     def __init__(self, config: LLaMAConf) -> None:
         super().__init__()
         assert config.padded_vocab_size is not None
@@ -76,7 +76,7 @@ class LLaMA(nn.Module):
 
     def forward(
         self, idx: torch.Tensor, max_seq_length: Optional[int] = None, 
-        input_pos: Optional[torch.Tensor] = None, mask = None, img_enc) -> Union[torch.Tensor, Tuple[torch.Tensor, List[KVCache]]]:
+        input_pos: Optional[torch.Tensor] = None, mask = None, img_enc=None) -> Union[torch.Tensor, Tuple[torch.Tensor, List[KVCache]]]:
         B, T = idx.size()
 
         block_size = self.config.block_size
@@ -107,7 +107,7 @@ class LLaMA(nn.Module):
 
         if input_pos is None:  # proxy for use_cache=False
             for block in self.transformer.h:
-                x, _ = block(x, rope, mask, max_seq_length, img_enc)
+                x, _ = block(x, rope, mask, max_seq_length, img_enc = img_enc)
         else:
             if not self.kv_caches:
                 head_size = self.config.n_embd // self.config.n_heads
@@ -150,13 +150,13 @@ class LLaMA(nn.Module):
 
     
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, break_at_eos=False, eos_token_id=None):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None, break_at_eos=False, eos_token_id=None, img_enc=None):
 
         for _ in range(max_new_tokens):
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
             # forward the model to get the logits for the index in the sequence
-            logits = self(idx_cond)
+            logits = self(idx_cond, img_enc=img_enc)
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
@@ -196,7 +196,7 @@ class Block(nn.Module):
         kv_cache: Optional[KVCache] = None,
         img_enc: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Optional[KVCache]]:
-        h, new_kv_cache = self.attn(self.rms_1(x), rope, mask, max_seq_length, input_pos, kv_cache, img_enc)
+        h, new_kv_cache = self.attn(self.rms_1(x), rope, mask, max_seq_length, input_pos, kv_cache, img_enc = img_enc)
         x = x + h
         x = x + self.mlp(self.rms_2(x))
         return x, new_kv_cache
