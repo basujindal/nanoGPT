@@ -12,7 +12,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 
-from model import GPTConfig, GPT
+# from model import GPTConfig, GPT
 from llamaModel import LLaMAConf, LLaMA
 from llamaTokenizer import LLaMAtokenizer
 
@@ -278,8 +278,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
             ## get current file path
             file_path = os.path.dirname(os.path.realpath(__file__))
-
-            ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/model.pt")
+            ckpt_path = os.path.join(file_path,"../lit-llama/7B/model.pt")
             
             print(f"Initializing from OG weights: {ckpt_path}")
 
@@ -300,7 +299,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             file_path = os.path.dirname(os.path.realpath(__file__))
 
             ckpt_dir = os.path.join(file_path, "../llama/7B")
-            ckpt_path = os.path.join(file_path,"../cptData/lit-llama/7B/lit-llama.pth")
+            ckpt_path = os.path.join(file_path,"../lit-llama/7B/lit-llama.pth")
             
             print(f"Initializing from OG weights: {ckpt_path}")
 

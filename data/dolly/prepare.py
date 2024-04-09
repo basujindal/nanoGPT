@@ -6,7 +6,7 @@ import json
 pth = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.append(pth)
 from llamaTokenizer import LLaMAtokenizer
-tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/lit-llama/tokenizer.model")
+tokenizer_path = os.path.join(os.path.dirname(pth), "lit-llama/tokenizer.model")
 train_frac = 0.9
 seq_len = 2048
 dataset = 'dolly'

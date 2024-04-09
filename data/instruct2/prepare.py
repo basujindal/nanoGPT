@@ -62,7 +62,7 @@ data_cleaned += data_cleaned_dolly
 sys.path.append(pth)
 from llamaTokenizer import LLaMAtokenizer
 
-tokenizer_path = os.path.join(os.path.dirname(pth), "cptData/lit-llama/tokenizer.model")
+tokenizer_path = os.path.join(os.path.dirname(pth), "lit-llama/tokenizer.model")
 
 train_frac = 0.9
 seq_len = 2048

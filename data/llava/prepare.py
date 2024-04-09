@@ -40,11 +40,11 @@ assert len (encoded) == len(data_cleaned)
 encoded = [encoded[i] for i in range(len(encoded)) if len(encoded[i]) < seq_len]
 
 # save encoded as pickle
-with open(os.path.join(pth, '../cptData/llava/encoded.pkl'), 'wb') as f:
+with open(os.path.join(pth, '../llava/encoded.pkl'), 'wb') as f:
     pickle.dump(encoded, f)
     
     
-pth = '../cptData/llava/train2014'
+pth = '../llava/train2014'
 dir_imgs = os.listdir(pth)
 
 img_idxs = []

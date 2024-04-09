@@ -88,7 +88,7 @@ dataset = 'llava'
 init_from = 'llava'
 
 data_type = 'llava'
-out_dir = '../cptData/out/' + wandb_run_name 
+out_dir = '../out/' + wandb_run_name 
 
 # only save checkpoints if the validation loss improves
 always_save_checkpoint = False
@@ -141,9 +141,9 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 
 ## load encoded from pickle
 
-encoded = pickle.load(open('../cptData/llava/encoded.pkl', 'rb'))
-img_idxs = pickle.load(open('../cptData/llava/img_idxs.pkl', 'rb'))
-encoded_imgs = torch.load('../cptData/llava/all_features.pt', map_location = device)
+encoded = pickle.load(open('../llava/encoded.pkl', 'rb'))
+img_idxs = pickle.load(open('../llava/img_idxs.pkl', 'rb'))
+encoded_imgs = torch.load('../llava/all_features.pt', map_location = device)
 
 train_data = encoded[:int(len(encoded)*0.9)]
 val_data = encoded[int(len(encoded)*0.9):]

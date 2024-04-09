@@ -11,7 +11,7 @@ from utils import load_model, get_tokenizer, time_gpu
 
 # -----------------------------------------------------------------------------
 init_from = 'llava'
-out_dir = "/root/data/cptData/out/llava_0615-0745/ckpt.pt"
+out_dir = "/root/data/out/llava_0615-0745/ckpt.pt"
 start = "###User: Explain the image.\n###Bot:" ## Can also specify a file, use as: "FILE:prompt.txt"
 num_samples =  3  # number of samples to draw
 max_new_tokens = 200 # number of tokens generated in each sample

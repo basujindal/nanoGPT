@@ -58,7 +58,7 @@ trans = Compose([
     # Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
 ])
 
-pth = '../cptData/llava/train2014'
+pth = '../llava/train2014'
 dir_imgs = os.listdir(pth)
 
 trans2 = Compose([
@@ -93,5 +93,5 @@ for i in trange(len(dir_imgs)//batch_size + 1):
         image_features = model.encode_image(images.to(device).to(torch.bfloat16))
         all_features[i*batch_size:(i+1)*batch_size] = image_features
             
-torch.save(all_features, '../cptData/llava/all_features.pt')
+torch.save(all_features, '../llava/all_features.pt')
 
