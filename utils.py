@@ -15,6 +15,9 @@ from pathlib import Path
 # from model import GPTConfig, GPT
 from llamaModel import LLaMAConf, LLaMA
 from llamaTokenizer import LLaMAtokenizer
+from gemma import gemma_config, gemma_model
+from gemma.tokenizer import Tokenizer as GemmaTokenizer
+
 
 from pynvml import *
 
@@ -239,10 +242,10 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
             for k in ['n_layers', 'n_heads', 'n_embd', 'block_size', 'bias', 'vocab_size']:
                 model_args[k] = getattr(model.config, k)
                 
-        # crop down the model block size if desired, using model surgery
-        if block_size < model.config.block_size:
-            model.crop_block_size(block_size)
-            model_args['block_size'] = block_size # so that the checkpoint will have the right value
+            # crop down the model block size if desired, using model surgery
+            if block_size < model.config.block_size:
+                model.crop_block_size(block_size)
+                model_args['block_size'] = block_size # so that the checkpoint will have the right value
 
     elif model_type == 'llama':
         
@@ -318,9 +321,28 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
                 weights = torch.load(ckpt_path, map_location=device)
                 model.load_state_dict(weights, strict=False)
 
+    elif model_type == 'gemma':
+
+        ## get current file path
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        ckpt_path = "/root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/b33d513121f6b08bd8d6aa597f5962a5a9e6a929/gemma-2b.ckpt"
+        
+        print(f"Initializing Gemma weights: {ckpt_path}")
+
+        model_config = gemma_config.get_model_config(variant="2b")
+        model_config.dtype = "float16"
+        # model_config.quant = args.quant
+
+        with time_gpu(device, "Creating model"):
+            model = gemma_model.GemmaForCausalLM(model_config)
+            model.load_weights(ckpt_path)
+            
+        with time_gpu(device, "Loading state dict"):
+            model = model.to(device)
+
 
     print("Total time to load model: ", time.time() - start_time)
-    return model, model_args
+    return model, model_config
 
 
 def get_tokenizer(model_type):
@@ -337,6 +359,13 @@ def get_tokenizer(model_type):
         file_path = os.path.dirname(os.path.realpath(__file__))
         tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
         tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
+        encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
+        decode = lambda l: tokenizer.decode(l)
+
+    elif model_type == 'gemma':
+        
+        tokenizer_path = "/root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/b33d513121f6b08bd8d6aa597f5962a5a9e6a929/tokenizer.model"
+        tokenizer = GemmaTokenizer(model_path=tokenizer_path)
         encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
         decode = lambda l: tokenizer.decode(l)
 
