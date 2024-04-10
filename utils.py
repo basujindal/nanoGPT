@@ -325,7 +325,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
         ## get current file path
         file_path = os.path.dirname(os.path.realpath(__file__))
-        ckpt_path = "/root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/b33d513121f6b08bd8d6aa597f5962a5a9e6a929/gemma-2b.ckpt"
+        ckpt_path = "../gemma/gemma-2b.ckpt"
         
         print(f"Initializing Gemma weights: {ckpt_path}")
 
@@ -364,7 +364,7 @@ def get_tokenizer(model_type):
 
     elif model_type == 'gemma':
         
-        tokenizer_path = "/root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/b33d513121f6b08bd8d6aa597f5962a5a9e6a929/tokenizer.model"
+        tokenizer_path = "../gemma/tokenizer.model"
         tokenizer = GemmaTokenizer(model_path=tokenizer_path)
         encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
         decode = lambda l: tokenizer.decode(l)

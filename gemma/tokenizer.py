@@ -21,6 +21,7 @@ class Tokenizer:
 
     def __init__(self, model_path: Optional[str]):
         # Reload tokenizer.
+        print(model_path)
         assert os.path.isfile(model_path), model_path
         self.sp_model = SentencePieceProcessor(model_file=model_path)
 
