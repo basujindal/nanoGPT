@@ -420,6 +420,7 @@ class GemmaForCausalLM(nn.Module):
         freqs_cis = self.freqs_cis.index_select(0, input_positions)
         kv_write_indices = input_positions
 
+
         # [batch_size, input_len, hidden_size]
         hidden_states = self.embedder(input_token_ids)
         # Gemma normalizes the embedding by sqrt(hidden_size).
@@ -451,7 +452,11 @@ class GemmaForCausalLM(nn.Module):
         top_ks: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
+        print(self.freqs_cis.shape)
         freqs_cis = self.freqs_cis.index_select(0, input_positions)
+        print(input_positions)
+        print(freqs_cis.shape)
+        kv_write_indices = input_positions
         kv_write_indices = input_positions
 
         # [batch_size, input_len, hidden_size]

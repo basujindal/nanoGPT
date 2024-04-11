@@ -10,6 +10,9 @@ sys.path.append('/root/data/nanoGPT_LB/gemma/')
 from utils import get_tokenizer
 
 tokenizer_path = os.path.join(os.path.dirname(pth), "gemma/tokenizer.model")
+eos_token_id = 1
+pad_token_id = 1
+
 train_frac = 0.9
 seq_len = 2048
 dataset = 'dolly'
@@ -20,7 +23,7 @@ with open(os.path.join(pth, 'data/dolly/databricks-dolly-15k.jsonl')) as f:
     data = f.readlines()
     
 data = [json.loads(line) for line in data]
-data_cleaned  = ["###User: " + instruct['instruction'] + "\n###Bot: " + instruct['response'] for instruct in data]
+data_cleaned  = ["\n###User: " + instruct['instruction'] + "\n###Bot: " + instruct['response'] for instruct in data]
 
 encoded = []
 for sentence in data_cleaned:
@@ -28,7 +31,7 @@ for sentence in data_cleaned:
 assert len (encoded) == len(data_cleaned)
 
 encoded = [encoded[i] for i in range(len(encoded)) if len(encoded[i]) < seq_len]
-comb = np.ones((len(encoded), seq_len), dtype=np.int32)*2 ## pad with eos_token_id
+comb = np.ones((len(encoded), seq_len), dtype=np.int32)*eos_token_id ## pad with eos_token_id
 
 j, k = 0, 0
 sen_lens, l = [], []
@@ -45,12 +48,13 @@ for i in encoded:
     comb[j, k-len(i):k] = i
 
 for i in range(len(comb)):
-    if np.all(comb[i] == 2):
+    if np.all(comb[i] == eos_token_id):
         num_sen = i-1
         break
 
 comb = comb[:num_sen]
 
+print(dec(comb[0].tolist()))
 max_len = max([len(i) for i in sen_lens])
 
 sen_lens = [i + [0]*(max_len - len(i)) for i in sen_lens]
@@ -71,11 +75,12 @@ inp_shape_train = [item for sublist in inp_shape_train for item in sublist]
 inp_shape_val = [item for sublist in inp_shape_val for item in sublist]
 
 # export to bin files
-train_ids = np.array(train_ids, dtype=np.uint16)
-val_ids = np.array(val_ids, dtype=np.uint16)
-inp_shape_train = np.array(inp_shape_train, dtype=np.uint16)
-inp_shape_val = np.array(inp_shape_val, dtype=np.uint16)
+train_ids = np.array(train_ids, dtype=np.int32)
+val_ids = np.array(val_ids, dtype=np.int32)
+inp_shape_train = np.array(inp_shape_train, dtype=np.int32)
+inp_shape_val = np.array(inp_shape_val, dtype=np.int32)
 
+print(dec(train_ids[0][:100].tolist()))
 train_ids.tofile(os.path.join(pth, 'data/{dataset}/train_gemma.bin'.format(dataset=dataset)))
 val_ids.tofile( os.path.join(pth, 'data/{dataset}/val_gemma.bin'.format(dataset=dataset)))
 inp_shape_train.tofile(os.path.join(pth, 'data/{dataset}/inp_shape_train_gemma.bin'.format(dataset=dataset)))

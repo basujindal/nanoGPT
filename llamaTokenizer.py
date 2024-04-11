@@ -6,7 +6,6 @@ from logging import getLogger
 from typing import List
 import os
 
-
 logger = getLogger()
 
 

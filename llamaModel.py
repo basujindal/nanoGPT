@@ -106,19 +106,22 @@ class LLaMA(nn.Module):
         # forward the model itself
         x = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
 
-        if input_pos is None:  # proxy for use_cache=False
-            for block in self.transformer.h:
-                x, _ = block(x, rope, mask, max_seq_length)
-        else:
-            if not self.kv_caches:
-                head_size = self.config.n_embd // self.config.n_heads
-                cache_shape = (B, self.config.n_heads, max_seq_length, head_size)
-                self.kv_caches = [
-                    (torch.zeros(cache_shape, device=x.device, dtype=x.dtype), torch.zeros(cache_shape, device=x.device, dtype=x.dtype))
-                    for _ in range(self.config.n_layers)
-                ]
-            for i, block in enumerate(self.transformer.h):
-                x, self.kv_caches[i] = block(x, rope, mask, max_seq_length, input_pos, self.kv_caches[i])
+        for block in self.transformer.h:
+            x, _ = block(x, rope, mask, max_seq_length)
+
+        # if input_pos is None:  # proxy for use_cache=False
+        #     for block in self.transformer.h:
+        #         x, _ = block(x, rope, mask, max_seq_length)
+        # else:
+        #     if not self.kv_caches:
+        #         head_size = self.config.n_embd // self.config.n_heads
+        #         cache_shape = (B, self.config.n_heads, max_seq_length, head_size)
+        #         self.kv_caches = [
+        #             (torch.zeros(cache_shape, device=x.device, dtype=x.dtype), torch.zeros(cache_shape, device=x.device, dtype=x.dtype))
+        #             for _ in range(self.config.n_layers)
+        #         ]
+        #     for i, block in enumerate(self.transformer.h):
+        #         x, self.kv_caches[i] = block(x, rope, mask, max_seq_length, input_pos, self.kv_caches[i])
 
         x = self.transformer.ln_f(x)
 
@@ -257,6 +260,7 @@ class CausalSelfAttention(nn.Module):
         v = v.transpose(1, 2)  # (B, nh, T, hs)
 
         if kv_cache is not None:
+            
             cache_k, cache_v = kv_cache
             # check if reached token limit
             if input_pos[-1] >= max_seq_length:
@@ -267,6 +271,7 @@ class CausalSelfAttention(nn.Module):
             k = cache_k.index_copy(2, input_pos, k)
             v = cache_v.index_copy(2, input_pos, v)
             kv_cache = k, v
+            print("kvcache",kv_cache.shape)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         #  att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))

@@ -345,12 +345,15 @@ class GemmaForCausalLM(nn.Module):
 
     def forward(
         self,
-        hidden_states: torch.Tensor,
-        input_positions: torch.Tensor,
+        input_token_ids: torch.Tensor,
+        # input_positions: torch.Tensor,
         mask: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
-        freqs_cis = self.freqs_cis.index_select(0, input_positions)
+        # freqs_cis = self.freqs_cis.index_select(0, input_positions)
+
+        freqs_cis = self.freqs_cis[:input_token_ids.shape[1]]
+        hidden_states = self.embedder(input_token_ids)
 
         # [batch_size, input_len, hidden_size]
         # Gemma normalizes the embedding by sqrt(hidden_size).

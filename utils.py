@@ -197,6 +197,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
     start_time = time.time()
 
     if model_type == 'gpt2':
+
         model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=block_size,
                     bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
 
@@ -329,12 +330,12 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
         
         print(f"Initializing Gemma weights: {ckpt_path}")
 
-        model_config = gemma_config.get_model_config(variant="2b")
-        model_config.dtype = "float16"
+        model_args = gemma_config.get_model_config(variant="2b")
+        model_args.dtype = "float16"
         # model_config.quant = args.quant
 
         with time_gpu(device, "Creating model"):
-            model = gemma_model.GemmaForCausalLM(model_config)
+            model = gemma_model.GemmaForCausalLM(model_args)
             model.load_weights(ckpt_path)
             
         with time_gpu(device, "Loading state dict"):
@@ -342,7 +343,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
 
     print("Total time to load model: ", time.time() - start_time)
-    return model, model_config
+    return model, model_args
 
 
 def get_tokenizer(model_type):
