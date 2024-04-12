@@ -21,6 +21,7 @@ import sys
 sys.path.append("/root/data/nanoGPT_LB")
 from gemma import gemma_config as config
 import gemma.gemma_model_infer as gemma_model
+from utils import count_parameters
 
 
 @contextlib.contextmanager
@@ -33,6 +34,7 @@ def _set_default_tensor_type(dtype: torch.dtype):
 
 def main(args):
     # Construct the model config.
+    print(args)
     model_config = config.get_model_config(args.variant)
     model_config.dtype = "float32" if args.device == "cpu" else "float16"
     model_config.quant = args.quant
@@ -46,7 +48,12 @@ def main(args):
     device = torch.device(args.device)
     with _set_default_tensor_type(model_config.get_dtype()):
         model = gemma_model.GemmaForCausalLM(model_config)
-        model.load_weights(args.ckpt)
+        count_parameters(model, print_table=True)
+        
+        # for name, param in model.named_parameters():
+        #     print(name, param.dtype)
+
+        model.load_weights(args.ckpt, device = args.device)
         model = model.to(device).eval()
     print("Model loading done")
 

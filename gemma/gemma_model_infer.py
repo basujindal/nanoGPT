@@ -396,8 +396,6 @@ class GemmaForCausalLM(nn.Module):
         head_dim = config.head_dim
         vocab_size = config.vocab_size
 
-        # print(config.tokenizer)
-
         self.tokenizer = tokenizer.Tokenizer(config.tokenizer)
         self.embedder = Embedding(vocab_size, config.hidden_size, config.quant)
         self.model = GemmaModel(config)
@@ -452,10 +450,7 @@ class GemmaForCausalLM(nn.Module):
         top_ks: torch.Tensor,
         **kwargs,
     ) -> torch.Tensor:
-        print(self.freqs_cis.shape)
         freqs_cis = self.freqs_cis.index_select(0, input_positions)
-        print(input_positions)
-        print(freqs_cis.shape)
         kv_write_indices = input_positions
         kv_write_indices = input_positions
 
@@ -592,10 +587,10 @@ class GemmaForCausalLM(nn.Module):
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
 
-    def load_weights(self, model_path: str):
+    def load_weights(self, model_path: str, device = "cpu"):
         self.load_state_dict(
             torch.load(
-                model_path, weights_only=True,
+                model_path, weights_only=True, map_location=device
             )['model_state_dict'],
             strict=False,
         )

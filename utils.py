@@ -22,6 +22,52 @@ from gemma.tokenizer import Tokenizer as GemmaTokenizer
 
 from pynvml import *
 
+import time
+from prettytable import PrettyTable
+
+class Timer:
+    def __init__(self, start_msg = "", end_msg = ""):
+    
+        self.start_msg = start_msg
+        self.end_msg = end_msg
+        
+    def __enter__(self):
+        if self.start_msg != "":
+            print(self.start_msg)
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        elapsed_time = time.time() - self.start_time
+        print(self.end_msg, f"{elapsed_time:.3f} sec")
+
+
+def count_parameters(model, print_table = False):
+    
+    total_params = 0
+    
+    if(print_table):
+        table = PrettyTable(["Modules", "Parameters", "dtype", "Required Grad"]) 
+    
+    for name, parameter in model.named_parameters():
+        params = parameter.numel()
+        
+        if(print_table):
+            table.add_row([name, params, parameter.dtype, parameter.requires_grad])
+            
+        total_params += params
+        
+    if(print_table):
+        print(table)
+        
+    if total_params/1e9 > 1:
+        print(f"Total Trainable Params: {total_params/1e9} B")
+    else:
+        print(f"Total Trainable Params: {total_params/1e6} M")
+        
+    return total_params
+
+
 def find_sub_list(sl,l):
     results=[]
     sll=len(sl)
@@ -352,10 +398,10 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
         with time_gpu(device, "Creating model"):
             model = gemma_model.GemmaForCausalLM(model_args)
-            model.load_weights(ckpt_path)
+            model.load_weights(ckpt_path, device=device)
             
-        with time_gpu(device, "Loading state dict"):
-            model = model.to(device)
+        # with time_gpu(device, "Loading state dict"):
+        #     model = model.to(device)
 
 
     print("Total time to load model: ", time.time() - start_time)
