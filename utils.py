@@ -325,6 +325,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
     elif model_type == 'gemma':
 
         ## get current file path
+        print("Getting gemms")
         file_path = os.path.dirname(os.path.realpath(__file__))
         ckpt_path = "../gemma/gemma-2b.ckpt"
         

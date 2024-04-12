@@ -58,7 +58,7 @@ compile = True # use PyTorch 2.0 to compile the model to be faster
 
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 torch.set_default_dtype(ptdtype)
-data_store_type = "np.uint16"
+data_store_type = np.uint16
 
 # learning block
 learning_block = False
@@ -81,7 +81,12 @@ exec(open('configurator.py').read()) # overrides from command line or config fil
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
-model_type = 'llama' if 'llama' in init_from else 'gpt2'
+if 'llama' in init_from:    
+    model_type = 'llama'
+elif init_from == "gemma":
+    model_type = "gemma"
+else:
+    model_type = "gpt2"
 
 ## if torch version < 2 set compile to False
 if torch.__version__[0] == '1' and compile:
@@ -122,16 +127,16 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 
 # poor man's data loader
 data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', dataset)
-train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=data_store_type, mode='r')
-val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=data_store_type, mode='r')
+train_data = np.memmap(os.path.join(data_dir, 'train_gemma.bin'), dtype=data_store_type, mode='r')
+val_data = np.memmap(os.path.join(data_dir, 'val_gemma.bin'), dtype=data_store_type, mode='r')
 
 print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
 
 print("Train data shape:", train_data.shape, "Val data shape:", val_data.shape)
 
 if data_type == 'instruct':
-    mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train.bin'), dtype=data_store_type, mode='r')
-    mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val.bin'), dtype=data_store_type, mode='r')
+    mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train_gemma.bin'), dtype=data_store_type, mode='r')
+    mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val_gemma.bin'), dtype=data_store_type, mode='r')
     train_data = train_data.reshape(-1, block_size)
     val_data = val_data.reshape(-1, block_size)    
     mask_train = mask_train.reshape(train_data.shape[0], -1)
@@ -160,7 +165,8 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
 
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
-print(model.dtype, model.device)
+for layer in model.parameters():
+    print(layer.dtype)
 with time_gpu(device, 'model to GPU'):
     model.to(device)
 
