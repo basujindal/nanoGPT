@@ -66,7 +66,7 @@ influence = 0.5
 
 ## instruct
 data_type = None
-break_at_eos=False
+break_at_eos=True
 eos_token_id=1
 train_on_user_only = False
 
@@ -166,7 +166,7 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
 for layer in model.parameters():
-    print(layer.dtype)
+    assert layer.dtype == torch.bfloat16
 with time_gpu(device, 'model to GPU'):
     model.to(device)
 
@@ -284,10 +284,18 @@ for iter_num in range(iter_num_resume, max_iters+1):
         param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints
-    if iter_num % eval_interval == 0 and master_process and 0:
+    if iter_num % eval_interval == 0 and master_process:
+
+        model.eval()
+
+        print("Sampling from trained model")
+        sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id)
+        model.train() 
         
-        with time_gpu(device,'Ealuate'):
-            losses = estimate_loss()
+        # with time_gpu(device,'Ealuate'):
+        #     losses = estimate_loss()
+
+        losses = {"train":0, "val":0}
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:

@@ -3,10 +3,10 @@ import numpy as np
 
 eval_interval = 5
 eval_iters = 40
-wandb_log = True # feel free to turn on
-wandb_project = 'learning-block'
+wandb_log = True
+wandb_project = 'quantize'
 
-sample_start = "###User: Write a few words on Einstein.\n###Bot:"
+sample_start = "\n###User: Write a few words on Einstein.\n###Bot:"
 max_new_tokens = 100
 
 wandb_run_name = 'ft_gemma_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
@@ -35,8 +35,8 @@ warmup_iters = max_iters // 10
 
 compile = False
 
-break_at_eos = False
-eos_token_id = 2
+break_at_eos = True
+eos_token_id = 1
 data_store_type = np.int32
 block_size = 2048
 

@@ -5,6 +5,7 @@ import torch
 import tiktoken
 import inspect
 from dataclasses import dataclass
+from torch.nn import functional as F
 
 import torch
 import numpy as np
@@ -102,22 +103,40 @@ class Sampler():
         self.ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
         ## tokenizer
-        self.encode, self.decode = get_tokenizer(model_name)
+        self.encode, self.decode = get_tokenizer(model_name, eos = False)
 
         # encode the beginning of the prompt
         if start.startswith('FILE:'):
             with open(start[5:], 'r', encoding='utf-8') as f:
                 start = f.read()
         start_ids = self.encode(start)
-        self.x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+        self.idx = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
-    def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=False, eos_token_id=None):
+    def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=True, eos_token_id=None, block_size=2048):
         # run generation
         with torch.no_grad():
             with self.ctx:
                 for _ in range(num_samples):
-                    y = model.generate(self.x, max_new_tokens, temperature=temperature, top_k=top_k, break_at_eos=break_at_eos, eos_token_id=eos_token_id)
-                    print(self.decode(y[0].tolist()))
+                    idx = self.idx
+                    for ii in range(max_new_tokens):
+                        # if the sequence context is growing too long we must crop it at block_size
+                        idx = idx if idx.size(1) <= block_size else idx[:, -block_size:]
+
+                        mask = torch.tril(torch.ones(idx.shape[0], idx.shape[1],idx.shape[1],dtype=idx.dtype)).to(idx.device)
+                        logits = model(idx, mask)
+                        logits = logits[:, -1, :] / temperature
+                        if top_k is not None:
+                            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                            logits[logits < v[:, [-1]]] = -float('Inf')
+                        probs = F.softmax(logits, dim=-1)
+                        idx_next = torch.multinomial(probs, num_samples=1)
+                        idx = torch.cat((idx, idx_next), dim=1)
+                        
+                        if break_at_eos and idx_next.item() == eos_token_id:
+                            print("breaking at eos")
+                            break
+
+                    print(self.decode(idx[0].tolist()))
                     print('---------------')
 
 
@@ -147,7 +166,8 @@ def get_batch(split, block_size, batch_size, device_type, device, train_data, va
         return x, y, None, None
     
     elif data_type == 'instruct':
-        
+
+        pred_idxs = None
         data = train_data if split == 'train' else val_data
         mask_data = mask_train if split == 'train' else mask_val
         
@@ -167,12 +187,7 @@ def get_batch(split, block_size, batch_size, device_type, device, train_data, va
         else:
             x, y, mask = x.to(device), y.to(device), mask.to(device)
             
-        if train_on_user_only:
-            
-           return x, y, mask, pred_idxs
-            
-        else:    
-            return x, y, mask, None
+        return x, y, mask, pred_idxs
 
     
 def get_time_str():
@@ -332,7 +347,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
         print(f"Initializing Gemma weights: {ckpt_path}")
 
         model_args = gemma_config.get_model_config(variant="2b")
-        model_args.dtype = "float16"
+        model_args.dtype = "bfloat16"
         # model_config.quant = args.quant
 
         with time_gpu(device, "Creating model"):
@@ -347,7 +362,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
     return model, model_args
 
 
-def get_tokenizer(model_type):
+def get_tokenizer(model_type, eos = True, bos= False):
     
     if model_type == 'gpt2':
         # ok let's assume gpt-2 encodings by default
@@ -361,14 +376,14 @@ def get_tokenizer(model_type):
         file_path = os.path.dirname(os.path.realpath(__file__))
         tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
         tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
-        encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
+        encode = lambda s: tokenizer.encode(s, bos=eos, eos=bos)
         decode = lambda l: tokenizer.decode(l)
 
     elif model_type == 'gemma':
         
         tokenizer_path = "../gemma/tokenizer.model"
         tokenizer = GemmaTokenizer(model_path=tokenizer_path)
-        encode = lambda s: tokenizer.encode(s, bos=False, eos=True)
+        encode = lambda s: tokenizer.encode(s, bos=bos, eos=eos)
         decode = lambda l: tokenizer.decode(l)
 
     return encode, decode
