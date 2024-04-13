@@ -53,7 +53,7 @@ def count_parameters(model, print_table = False):
         params = parameter.numel()
         
         if(print_table):
-            table.add_row([name, params, parameter.dtype, parameter.requires_grad])
+            table.add_row([name, parameter.shape, parameter.dtype, parameter.requires_grad])
             
         total_params += params
         
