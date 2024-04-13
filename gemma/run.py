@@ -49,9 +49,6 @@ def main(args):
     with _set_default_tensor_type(model_config.get_dtype()):
         model = gemma_model.GemmaForCausalLM(model_config)
         count_parameters(model, print_table=True)
-        
-        # for name, param in model.named_parameters():
-        #     print(name, param.dtype)
 
         model.load_weights(args.ckpt, device = args.device)
         model = model.to(device).eval()
@@ -78,7 +75,7 @@ if __name__ == "__main__":
                         type=str,
                         default="cuda",
                         choices=["cpu", "cuda"])
-    parser.add_argument("--output_len", type=int, default=1)
+    parser.add_argument("--output_len", type=int, default=100)
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--quant", action='store_true')
     parser.add_argument("--prompt", type=str, default="The meaning of life is")
