@@ -75,7 +75,6 @@ eval_only = False # if True, script exits right after the first eval
 calc_perplexity = False # if True, calculate perplexity
 num_samples = 1
 
-
 # -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -167,18 +166,8 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
 
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
-for layer in model.parameters():
-    assert layer.dtype == torch.bfloat16
 with time_gpu(device, 'model to GPU'):
     model.to(device)
-
-## set requires grad to false for all layers except learning block
-if learning_block:
-    print("setting requires_grad=False for all layers except learning block")
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            if "learning_block" not in name:
-                param.requires_grad = False
 
 ## set requires grad to false for layernorms
 print("setting requires_grad=False for all norm layers")

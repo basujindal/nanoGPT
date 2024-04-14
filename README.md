@@ -11,11 +11,11 @@ pip install -U "huggingface_hub[cli]" sentencepiece prettytable
 
 ## Push changes
 
-`chmod 600 ~/.ssh/id_rsa_basu`
 
 ```bash
+chmod 600 ~/.ssh/id_rsa
 eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_rsa_basu
+ssh-add ~/.ssh/id_rsa
 ```
 
 ## Download Models

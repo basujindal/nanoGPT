@@ -1,34 +1,15 @@
-"""
-This training script can be run both on a single gpu in debug mode,
-and also in a larger training run with distributed data parallel (ddp).
-
-To run on a single GPU, example:
-$ python train.py --batch_size=32 --compile=False
-
-To run with DDP on 4 gpus on 1 node, example:
-$ torchrun --standalone --nproc_per_node=4 train.py
-
-To run with DDP on 4 gpus across 2 nodes, example:
-- Run on the first (master) node with example IP 123.456.123.456:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=0 --master_addr=123.456.123.456 --master_port=1234 train.py
-- Run on the worker node:
-$ torchrun --nproc_per_node=8 --nnodes=2 --node_rank=1 --master_addr=123.456.123.456 --master_port=1234 train.py
-(If your cluster does not have Infiniband interconnect prepend NCCL_IB_DISABLE=1)
-"""
-
 import os
 import time
 import math
 import pickle
 from contextlib import nullcontext
-from tqdm import trange
-
 import numpy as np
+from tqdm import trange
 import torch
+import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
-
-from utils import Sampler, get_batch, load_model
+from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -37,10 +18,10 @@ out_dir = 'out'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
-eval_only = False # if True, script exits right after the first eval
-sample_start = "\n"
+sample_start = "The king exclaimed thou"
+max_new_tokens=100
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
-init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
+init_from = 'scratch' # or 'resume' or 'gpt2-medium' or 'gpt2-large' or 'gpt2-xl' or 'eval_llama' or 'llama'
 # wandb logging
 wandb_log = False # disabled by default
 wandb_project = "transformers"
@@ -49,7 +30,7 @@ wandb_run_name = 'gpt2' # 'run' + str(time.time())
 dataset = 'openwebtext'
 gradient_accumulation_steps = 1 # used to simulate larger batch sizes
 batch_size = 32 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
+block_size = 2048
 # model
 n_layers = 12
 n_heads = 12
@@ -75,20 +56,39 @@ device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps'
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
 
-model_type = 'gpt2'
-
+ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+torch.set_default_dtype(ptdtype)
+data_store_type = np.uint16
 
 # learning block
 learning_block = False
 influence = 0.5
-# -----------------------------------------------------------------------------
 
+## instruct
+data_type = None
+break_at_eos=True
+eos_token_id=1
+train_on_user_only = False
+
+## eval
+eval_only = False # if True, script exits right after the first eval
+calc_perplexity = False # if True, calculate perplexity
+num_samples = 1
+
+
+# -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
+if 'llama' in init_from:    
+    model_type = 'llama'
+elif init_from == "gemma":
+    model_type = "gemma"
+else:
+    model_type = "gpt2"
 
 ## if torch version < 2 set compile to False
 if torch.__version__[0] == '1' and compile:
@@ -129,11 +129,22 @@ ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=
 
 # poor man's data loader
 data_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', dataset)
-train_data = np.memmap(os.path.join(data_dir, 'train.bin'), dtype=np.uint16, mode='r')
-val_data = np.memmap(os.path.join(data_dir, 'val.bin'), dtype=np.uint16, mode='r')
-
+train_data = np.memmap(os.path.join(data_dir, 'train_gemma.bin'), dtype=data_store_type, mode='r')
+val_data = np.memmap(os.path.join(data_dir, 'val_gemma.bin'), dtype=data_store_type, mode='r')
 
 print("Iterations per epoch:", train_data.shape[0] // tokens_per_iter)
+
+print("Train data shape:", train_data.shape, "Val data shape:", val_data.shape)
+
+if data_type == 'instruct':
+    mask_train = np.memmap(os.path.join(data_dir, 'inp_shape_train_gemma.bin'), dtype=data_store_type, mode='r')
+    mask_val = np.memmap(os.path.join(data_dir, 'inp_shape_val_gemma.bin'), dtype=data_store_type, mode='r')
+    train_data = train_data.reshape(-1, block_size)
+    val_data = val_data.reshape(-1, block_size)    
+    mask_train = mask_train.reshape(train_data.shape[0], -1)
+    mask_val = mask_val.reshape(val_data.shape[0], -1)
+
+    print("Train data shape:", train_data.shape, "Mask train:", mask_train.shape, "Val data shape:", val_data.shape, "Mask val:", mask_val.shape)
 
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
@@ -149,18 +160,17 @@ if os.path.exists(meta_path):
     meta_vocab_size = meta['vocab_size']
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
+# model init
+model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=block_size,
+                  bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
 
 
-# load model
-model, model_args = load_model(model_type, out_dir, device, learning_block, 
-                               influence, init_from,  n_layers, n_heads, 
-                               n_embd, block_size, bias, dropout, meta_vocab_size)
+model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
-print("model", model)
-model.to(device)
+with time_gpu(device, 'model to GPU'):
+    model.to(device)
 
 ## set requires grad to false for all layers except learning block
-
 if learning_block:
     print("setting requires_grad=False for all layers except learning block")
     for name, param in model.named_parameters():
@@ -168,32 +178,36 @@ if learning_block:
             if "learning_block" not in name:
                 param.requires_grad = False
 
+
 ## total number of parameters that requires grad
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("total params with requires grad", total_params/1e6, "M")
-
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
 scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
-if init_from == 'resume':
-    optimizer.load_state_dict(checkpoint['optimizer'])
+optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
+# if init_from == 'resume':
+#     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
 
 # compile the model
 if compile:
-    print("compiling the model... (takes a ~minute)")
-    unoptimized_model = model
-    model = torch.compile(model) # requires PyTorch 2.0
+    with time_gpu(device, 'compiling model'):
+        print("compiling the model... (takes a ~minute)")
+        model = torch.compile(model) # requires PyTorch 2.0
 
 # wrap model into DDP container
 if ddp:
     model = DDP(model, device_ids=[ddp_local_rank])
 
+sampler = Sampler(model_name = model_type, start = sample_start, device = device)
 
-sampler = Sampler(start = sample_start, device = device)
+if calc_perplexity:
+    from torcheval.metrics.text import Perplexity
+    perplexity = Perplexity()
+    perplexity.to(device)
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
@@ -201,18 +215,33 @@ def estimate_loss():
     out = {}
     model.eval()
 
-    print("Sampling from trained model")
-    sampler.generate(model)
+    print("Sampling from model")
+    sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
 
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
-            X, Y = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data)
+            X, Y, mask, pred_idxs = get_batch(split, block_size, batch_size, device_type, device, train_data, val_data, 
+                                   data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+                
             with ctx:
-                logits = model(X)
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+                logits = model(X, mask = mask)
+                                
+            if train_on_user_only:
+                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+
+            if calc_perplexity:
+                perplexity.update(logits, Y)
+                
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             losses[k] = loss.item()
         out[split] = losses.mean()
+        
+        if calc_perplexity:
+            print(f"perplexity on {split} split: {perplexity.compute():.3f}")
+            perplexity.reset()
+        
     model.train()
     return out
 
@@ -233,20 +262,22 @@ def get_lr(it):
 # logging
 if wandb_log and master_process:
     import wandb
-    ## add wandb key
     wandb_api_key = ""
     wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
 
 # training loop
-X, Y = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data)
+X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
+                       data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
-running_mfu = -1.0
 iter_num_resume = iter_num
-
+        
+        
+print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
-    print("Training")
+
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
     for param_group in optimizer.param_groups:
@@ -254,61 +285,69 @@ for iter_num in range(iter_num_resume, max_iters+1):
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
-        losses = estimate_loss()
+
+        model.eval()
+        # print("Sampling from model")
+        # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id)
+        # model.train() 
+        
+        with time_gpu(device,'Ealuate'):
+            losses = estimate_loss()
+
+        # losses = {"train":0, "val":0}
+            
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
-                "train/loss": losses['train'],
-                "val/loss": losses['val'],
+                "train_loss": losses['train'],
+                "val_loss": losses['val'],
                 "lr": lr,
-                "mfu": running_mfu*100, # convert to percentage
             })
         if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
                     'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
+                    # 'optimizer': optimizer.state_dict(),
                     'model_args': model_args,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                     'config': config,
                 }
                 print(f"saving checkpoint to {out_dir}")
-                torch.save(checkpoint, os.path.join(out_dir, str(best_val_loss) + '_ckpt.pt'))
+                torch.save(checkpoint, os.path.join(out_dir,'ckpt.pt'))
     if iter_num == 0 and eval_only:
         break
 
-    # forward backward update, with optional gradient accumulation to simulate larger batch size
-    # and using the GradScaler if data type is float16
-    for micro_step in range(gradient_accumulation_steps):
-        if ddp:
-            # in DDP training we only need to sync gradients at the last micro step.
-            # the official way to do this is with model.no_sync() context manager, but
-            # I really dislike that this bloats the code and forces us to repeat code
-            # looking at the source of that context manager, it just toggles this variable
-            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
-        with ctx:
-            logits = model(X)
+    with time_gpu(device, 'Training Step'):
+        
+        for micro_step in range(gradient_accumulation_steps):
+            if ddp:
+                model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+            with ctx:
+                logits = model(X, mask = mask)
+                
+            if train_on_user_only:
+                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
+
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-        # immediately async prefetch next batch while model is doing the forward pass on the GPU
-        # print("loading batch")
-        X, Y = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data)
-        # print("batch loaded")
-        # backward pass, with gradient scaling if training in fp16
-        scaler.scale(loss).backward()
-    # clip the gradient
-    if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-    # step the optimizer and scaler if training in fp16
-    scaler.step(optimizer)
-    scaler.update()
-    # flush the gradients as soon as we can, no need for this memory anymore
-    optimizer.zero_grad(set_to_none=True)
-    print("optimizing")
+                
+            # immediately async prefetch next batch while model is doing the forward pass on the GPU
+            X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
+                                   data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+            
+            scaler.scale(loss).backward()
+        # clip the gradient
+        if grad_clip != 0.0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad(set_to_none=True)
 
     # timing and logging
     t1 = time.time()
@@ -318,12 +357,10 @@ for iter_num in range(iter_num_resume, max_iters+1):
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        if local_iter_num >= 5: # let the training loop settle a bit
-            mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
-            running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
     iter_num += 1
     local_iter_num += 1
 
 if ddp:
     destroy_process_group()
+
