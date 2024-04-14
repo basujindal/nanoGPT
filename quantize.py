@@ -4,6 +4,7 @@ import random
 import numpy as np
 import torch
 import sys
+from tqdm import trange
 
 sys.path.append("/root/data/nanoGPT_LB")
 from gemma import gemma_config as config
@@ -25,10 +26,13 @@ model_config.quant = False
 seed = 1337
 device = "cuda"
 ckpt = "/root/data/gemma/gemma-2b.ckpt"
-# Seed random.
+# ckpt = "../cptData/out/ft_gemma_dolly_0414-0328/ckpt.pt"
 random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
+
+output_len = 100
+prompt = "\n###User: Write a few words on Einstein.\n###Bot:"
 
 # Create the model and load the weights.
 device = torch.device(device)
@@ -42,11 +46,11 @@ model_config.dtype = "float16"
 model_config.quant = True
 
 with _set_default_tensor_type(model_config.get_dtype()):
-    model_quant = gemma_model.GemmaForCausalLM(model_config)
+    model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
     count_parameters(model_quant, print_table=False)    
     model_quant.load_weights(ckpt, device = device)
 
-print("Model loading done")
+print("Model loaded")
 
 def quantize(weights):
 
@@ -57,19 +61,52 @@ def quantize(weights):
     return weights_int, scale
 
 if __name__ == "__main__":
-    
-    with torch.no_grad():
-        for name_quant, params_quant in model_quant.named_parameters():
-            if "weight_scaler" in name_quant:
-                print("copying ", name_quant)
-                params_quant.copy_(qp[1])
-            if "norm" not in name_quant:
-                for name, params in model.named_parameters():
-                    if (name_quant == name):
-                        qp = quantize(params)
-                        params_quant.copy_(qp[0])
-                        print("copying ", name_quant)
 
-    print("Saving quantized model")
-    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
+    with torch.no_grad():
+
+        iter_quant = model_quant.named_parameters()
+        iter = model.named_parameters()
+    
+        num_layers = 0
+        for _ in model.named_parameters():
+            num_layers+=1
+
+        print("Quantizing model")
+        for i in trange(num_layers):
+            with torch.no_grad():
+                name, params = next(iter)
+                name_quant, params_quant = next(iter_quant) 
+                
+                if "norm" not in name:
+                    name_scale, params_scale = next(iter_quant) 
+                    # print("quantizing", name)
+
+                    qp = quantize(params)
+                    params_quant.copy_(qp[0])                    
+                    params_scale.copy_(qp[1])
+
+                iter_quant = model_quant.named_parameters()
+        iter = model.named_parameters()
+
+        for i in trange(num_layers):
+            with torch.no_grad():
+                name, params = next(iter)
+                name_quant, params_quant = next(iter_quant) 
+                
+                if "norm" not in name:
+                    name_scale, params_scale = next(iter_quant) 
+
+                    print(name,params_quant, params_scale )
+
+    # print("Saving quantized model")
+    # torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
+
+    # # Samole from quantized model.
+    # result = model_quant.generate(prompt, device, output_len=output_len)
+
+    # # Print the prompts and results.
+    # print('======================================')
+    # print(f'PROMPT: {prompt}')
+    # print(f'RESULT: {result}')
+    # print('======================================')
 

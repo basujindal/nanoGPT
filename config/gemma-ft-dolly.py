@@ -3,7 +3,8 @@ import numpy as np
 
 eval_interval = 5
 eval_iters = 40
-wandb_log = True
+# wandb_log = True
+wandb_log = False
 wandb_project = 'quantize'
 
 sample_start = "\n###User: Write a few words on Einstein.\n###Bot:"

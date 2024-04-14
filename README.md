@@ -60,9 +60,8 @@ python data/dolly/prepare.py
 ## Train
 
 ```bash
-cd ~/basu_workspace/nanoGPT
+cd ~/nanoGPT_LB
 export WANDB_API_KEY=
 . activate myenv
-pip install sentencepiece jsonargparse
 python all_train.py config/gemma-ft-dolly.py
 ```

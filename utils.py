@@ -14,11 +14,13 @@ import json
 from pathlib import Path
 
 # from model import GPTConfig, GPT
-from llamaModel import LLaMAConf, LLaMA
-from llamaTokenizer import LLaMAtokenizer
+from llama.llamaModel import LLaMAConf, LLaMA
+from llama.llamaTokenizer import LLaMAtokenizer
 from gemma import gemma_config, gemma_model
 from gemma.tokenizer import Tokenizer as GemmaTokenizer
 
+import warnings
+warnings.filterwarnings('ignore', category=UserWarning, message='TypedStorage is deprecated')
 
 from pynvml import *
 
@@ -385,8 +387,6 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
 
     elif model_type == 'gemma':
 
-        ## get current file path
-        print("Getting gemms")
         file_path = os.path.dirname(os.path.realpath(__file__))
         ckpt_path = "../gemma/gemma-2b.ckpt"
         

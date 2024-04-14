@@ -4,12 +4,14 @@ import math
 import pickle
 from contextlib import nullcontext
 import numpy as np
-from tqdm import trange
 import torch
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
-from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs
+from utils import load_model, Sampler, get_batch, configure_optimizers, time_gpu, get_pred_idxs, count_parameters
+import contextlib
+from gemma import gemma_config
+import gemma.gemma_model_infer as gemma_model
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -94,8 +96,6 @@ if torch.__version__[0] == '1' and compile:
     print("PyTorch version < 2.0, disabling compilation")
     compile = False
 
-print("Using Learning Block", learning_block)
-
 # various inits, derived attributes, I/O setup
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
 if ddp:
@@ -166,6 +166,22 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
 
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
+model_config = gemma_config.get_model_config("2b")
+model_config.dtype = "float16"
+model_config.quant = True
+ckpt = "/root/data/gemma/gemma-2b-quant.ckpt"
+
+model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
+model_quant.load_weights(ckpt, device = torch.device(device))
+count_parameters(model_quant, print_table=False)
+model_quant.eval()
+print("Quant Model loaded")
+
+
+num_layers = 0
+for _ in model.named_parameters():
+    num_layers+=1
+
 with time_gpu(device, 'model to GPU'):
     model.to(device)
 
@@ -173,7 +189,6 @@ with time_gpu(device, 'model to GPU'):
 print("setting requires_grad=False for all norm layers")
 for name, param in model.named_parameters():
     if "norm" in name:
-        print(name)
         param.requires_grad = False
 
 
@@ -186,14 +201,10 @@ scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
 optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
-# if init_from == 'resume':
-#     optimizer.load_state_dict(checkpoint['optimizer'])
-checkpoint = None # free up memory
 
 # compile the model
 if compile:
     with time_gpu(device, 'compiling model'):
-        print("compiling the model... (takes a ~minute)")
         model = torch.compile(model) # requires PyTorch 2.0
 
 # wrap model into DDP container
@@ -272,7 +283,6 @@ local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
         
-        
 print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
 
@@ -285,14 +295,9 @@ for iter_num in range(iter_num_resume, max_iters+1):
     if iter_num % eval_interval == 0 and master_process:
 
         model.eval()
-        # print("Sampling from model")
-        # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id)
-        # model.train() 
         
         with time_gpu(device,'Ealuate'):
             losses = estimate_loss()
-
-        # losses = {"train":0, "val":0}
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
@@ -346,6 +351,19 @@ for iter_num in range(iter_num_resume, max_iters+1):
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad(set_to_none=True)
+
+        print("Clipping model weights")
+        iter_quant = model_quant.named_parameters()
+        iter = model.named_parameters()
+        for i in range(num_layers):
+            with torch.no_grad():
+                name, params = next(iter)
+                name_quant, params_quant = next(iter_quant) 
+                
+                if "norm" not in name:
+                    name_scale, params_scale = next(iter_quant) 
+                    weight_range = params_quant * params_scale.unsqueeze(-1)
+                    params.clamp(weight_range-0.5*params_scale.unsqueeze(-1), weight_range+0.5*params_scale.unsqueeze(-1))
 
     # timing and logging
     t1 = time.time()

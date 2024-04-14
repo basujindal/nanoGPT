@@ -75,7 +75,6 @@ eval_only = False # if True, script exits right after the first eval
 calc_perplexity = False # if True, calculate perplexity
 num_samples = 1
 
-
 # -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -188,14 +187,10 @@ scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
 optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
-# if init_from == 'resume':
-#     optimizer.load_state_dict(checkpoint['optimizer'])
-checkpoint = None # free up memory
 
 # compile the model
 if compile:
     with time_gpu(device, 'compiling model'):
-        print("compiling the model... (takes a ~minute)")
         model = torch.compile(model) # requires PyTorch 2.0
 
 # wrap model into DDP container

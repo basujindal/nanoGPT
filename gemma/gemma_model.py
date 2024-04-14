@@ -364,7 +364,6 @@ class GemmaForCausalLM(nn.Module):
         return logits
 
 
-
     def load_weights(self, model_path: str, device = "cpu"):
         self.load_state_dict(
             torch.load(
@@ -392,5 +391,6 @@ class GemmaForCausalLM(nn.Module):
                 print("breaking at eos")
                 break
 
-        
         return idx
+
+        
