@@ -73,8 +73,6 @@ train_on_user_only = False
 ## eval
 eval_only = False # if True, script exits right after the first eval
 calc_perplexity = False # if True, calculate perplexity
-num_samples = 1
-
 
 # -----------------------------------------------------------------------------
 
@@ -173,20 +171,13 @@ with time_gpu(device, 'model to GPU'):
     model.to(device)
 
 ## set requires grad to false for all layers except learning block
+
 if learning_block:
     print("setting requires_grad=False for all layers except learning block")
     for name, param in model.named_parameters():
         if param.requires_grad:
             if "learning_block" not in name:
                 param.requires_grad = False
-
-## set requires grad to false for layernorms
-print("setting requires_grad=False for all norm layers")
-for name, param in model.named_parameters():
-    if "norm" in name:
-        print(name)
-        param.requires_grad = False
-
 
 ## total number of parameters that requires grad
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -224,8 +215,8 @@ def estimate_loss():
     out = {}
     model.eval()
 
-    print("Sampling from model")
-    sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
+    print("Sampling from trained model")
+    sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id) 
 
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
@@ -296,21 +287,22 @@ for iter_num in range(iter_num_resume, max_iters+1):
     if iter_num % eval_interval == 0 and master_process:
 
         model.eval()
-        # print("Sampling from model")
-        # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id)
-        # model.train() 
-        
-        with time_gpu(device,'Ealuate'):
-            losses = estimate_loss()
 
-        # losses = {"train":0, "val":0}
+        print("Sampling from trained model")
+        sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id)
+        model.train() 
+        
+        # with time_gpu(device,'Ealuate'):
+        #     losses = estimate_loss()
+
+        losses = {"train":0, "val":0}
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
             wandb.log({
                 "iter": iter_num,
-                "train_loss": losses['train'],
-                "val_loss": losses['val'],
+                "train/loss": losses['train'],
+                "val/loss": losses['val'],
                 "lr": lr,
             })
         if losses['val'] < best_val_loss or always_save_checkpoint:
@@ -362,9 +354,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
     t1 = time.time()
     dt = t1 - t0
     t0 = t1
-    if iter_num % log_interval == 0 and master_process:
-        # get loss as float. note: this is a CPU-GPU sync point
-        # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+    if iter_num % log_interval == 0:
         lossf = loss.item() * gradient_accumulation_steps
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
     iter_num += 1
@@ -372,4 +362,3 @@ for iter_num in range(iter_num_resume, max_iters+1):
 
 if ddp:
     destroy_process_group()
-
