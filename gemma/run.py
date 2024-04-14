@@ -47,7 +47,7 @@ def main(args):
     # Create the model and load the weights.
     device = torch.device(args.device)
     with _set_default_tensor_type(model_config.get_dtype()):
-        model = gemma_model.GemmaForCausalLM(model_config)
+        model = gemma_model.GemmaForCausalLM(model_config).to(device)
         count_parameters(model, print_table=True)
 
         model.load_weights(args.ckpt, device = args.device)
@@ -60,6 +60,14 @@ def main(args):
     # Print the prompts and results.
     print('======================================')
     print(f'PROMPT: {args.prompt}')
+    print(f'RESULT: {result}')
+    print('======================================')
+
+    prompt = "\n###User: Write a few words on Einstein.\n###Bot:"
+    result = model.generate(prompt, device, output_len=args.output_len)
+
+    print('======================================')
+    print(f'PROMPT: {prompt}')
     print(f'RESULT: {result}')
     print('======================================')
 

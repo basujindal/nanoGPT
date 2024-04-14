@@ -19,39 +19,6 @@ def _set_default_tensor_type(dtype: torch.dtype):
     yield
     torch.set_default_dtype(torch.float)
 
-model_config = config.get_model_config("2b")
-model_config.dtype = "float16"
-model_config.quant = False
-
-seed = 1337
-device = "cuda"
-ckpt = "/root/data/gemma/gemma-2b.ckpt"
-# ckpt = "../cptData/out/ft_gemma_dolly_0414-0328/ckpt.pt"
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-
-output_len = 100
-prompt = "\n###User: Write a few words on Einstein.\n###Bot:"
-
-# Create the model and load the weights.
-device = torch.device(device)
-with _set_default_tensor_type(model_config.get_dtype()):
-    model = gemma_model.GemmaForCausalLM(model_config)
-    model.load_weights(ckpt, device = device)
-print("Model loading done")
-
-model_config = config.get_model_config("2b")
-model_config.dtype = "float16"
-model_config.quant = True
-
-with _set_default_tensor_type(model_config.get_dtype()):
-    model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
-    count_parameters(model_quant, print_table=False)    
-    model_quant.load_weights(ckpt, device = device)
-
-print("Model loaded")
-
 def quantize(weights):
 
     scale = torch.max(torch.abs(weights), dim = 1).values/127
@@ -59,17 +26,40 @@ def quantize(weights):
     weights_int = torch.round(scaled_weights).to(torch.int8)
 
     return weights_int, scale
+       
+def main(args):
 
-if __name__ == "__main__":
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+
+    model_config = config.get_model_config(args.variant)
+    model_config.dtype = "float16"
+    model_config.quant = False
+
+    device = torch.device(args.device)
+    with _set_default_tensor_type(model_config.get_dtype()):
+        model = gemma_model.GemmaForCausalLM(model_config)
+        model.load_weights(args.ckpt, device = device)
+
+    model_config = config.get_model_config("2b")
+    model_config.dtype = "float16"
+    model_config.quant = True
+
+    with _set_default_tensor_type(model_config.get_dtype()):
+        model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
+        count_parameters(model_quant, print_table=False)    
+
+    print("Model loaded")
 
     with torch.no_grad():
 
-        iter_quant = model_quant.named_parameters()
-        iter = model.named_parameters()
-    
         num_layers = 0
         for _ in model.named_parameters():
             num_layers+=1
+
+        iter_quant = model_quant.named_parameters()
+        iter = model.named_parameters()
 
         print("Quantizing model")
         for i in trange(num_layers):
@@ -79,34 +69,47 @@ if __name__ == "__main__":
                 
                 if "norm" not in name:
                     name_scale, params_scale = next(iter_quant) 
-                    # print("quantizing", name)
-
                     qp = quantize(params)
                     params_quant.copy_(qp[0])                    
                     params_scale.copy_(qp[1])
+                else:
+                    params_quant.copy_(params)
 
-                iter_quant = model_quant.named_parameters()
-        iter = model.named_parameters()
+        print("Sampling from quantized model")
+        result = model_quant.generate(args.prompt, device, output_len=args.output_len)
 
-        for i in trange(num_layers):
-            with torch.no_grad():
-                name, params = next(iter)
-                name_quant, params_quant = next(iter_quant) 
-                
-                if "norm" not in name:
-                    name_scale, params_scale = next(iter_quant) 
+        print('======================================')
+        print(f'PROMPT: {args.prompt}')
+        print(f'RESULT: {result}')
+        print('======================================')
 
-                    print(name,params_quant, params_scale )
+        prompt = "\n###User: Write a few words on Einstein.\n###Bot:"
+        result = model_quant.generate(prompt, device, output_len=args.output_len)
 
-    # print("Saving quantized model")
-    # torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
+        print('======================================')
+        print(f'PROMPT: {prompt}')
+        print(f'RESULT: {result}')
+        print('======================================')
 
-    # # Samole from quantized model.
-    # result = model_quant.generate(prompt, device, output_len=output_len)
+    print("Saving quantized model")
+    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant-" + args.ckpt.split('/')[-2] + ".ckpt")
 
-    # # Print the prompts and results.
-    # print('======================================')
-    # print(f'PROMPT: {prompt}')
-    # print(f'RESULT: {result}')
-    # print('======================================')
 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ckpt", type=str, default="/root/data/gemma/gemma-2b.ckpt")
+    parser.add_argument("--variant",
+                        type=str,
+                        default="2b",
+                        choices=["2b", "7b"])
+    parser.add_argument("--device",
+                        type=str,
+                        default="cuda",
+                        choices=["cpu", "cuda"])
+    parser.add_argument("--seed", type=int, default=12345)
+    parser.add_argument("--output_len", type=int, default=100)
+    parser.add_argument("--prompt", type=str, default="The meaning of life is")
+    args = parser.parse_args()
+
+    main(args)

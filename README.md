@@ -35,7 +35,7 @@ cd llama
 huggingface-cli login
 huggingface-cli download google/gemma-2b-pytorch
 mkdir ../gemma
-cp -L /root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/243cf154c74092915194784ed676ce8700d7d98b/* .
+cp -L /root/.cache/huggingface/hub/models--google--gemma-2b-pytorch/snapshots/243cf154c74092915194784ed676ce8700d7d98b/* /root/data/gemma
 ```
 
 

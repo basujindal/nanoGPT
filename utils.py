@@ -49,13 +49,13 @@ def count_parameters(model, print_table = False):
     total_params = 0
     
     if(print_table):
-        table = PrettyTable(["Modules", "Parameters", "dtype", "Required Grad"]) 
+        table = PrettyTable(["Modules", "Parameters", "dtype", "Required Grad", "Device"]) 
     
     for name, parameter in model.named_parameters():
         params = parameter.numel()
         
         if(print_table):
-            table.add_row([name, parameter.shape, parameter.dtype, parameter.requires_grad])
+            table.add_row([name, parameter.shape, parameter.dtype, parameter.requires_grad, parameter.device ])
             
         total_params += params
         
@@ -153,19 +153,20 @@ class Sampler():
         ## tokenizer
         self.encode, self.decode = get_tokenizer(model_name, eos = False)
 
-        # encode the beginning of the prompt
-        if start.startswith('FILE:'):
-            with open(start[5:], 'r', encoding='utf-8') as f:
-                start = f.read()
+        self.idxs = []
         start_ids = self.encode(start)
-        self.idx = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+        self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+
+        start_ids = self.encode("The meaning of life is")
+        self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=True, eos_token_id=None, block_size=2048):
         # run generation
         with torch.no_grad():
             with self.ctx:
-                for _ in range(num_samples):
-                    idx = self.idx
+                # for _ in range(num_samples):
+                    # idx = self.idx
+                for idx in self.idxs:
                     for ii in range(max_new_tokens):
                         # if the sequence context is growing too long we must crop it at block_size
                         idx = idx if idx.size(1) <= block_size else idx[:, -block_size:]

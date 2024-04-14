@@ -587,19 +587,11 @@ class GemmaForCausalLM(nn.Module):
         # If a string was provided as input, return a string as output.
         return results[0] if is_str_prompt else results
 
-    def load_weights(self, model_path: str, device = "cpu"):
+    def load_weights(self, model_path: str, device = "cpu", strict="True"):
         self.load_state_dict(
             torch.load(
-                model_path, weights_only=False, map_location=device
-            ),
-            strict=False,
+                model_path, weights_only=False, map_location=device,
+            )['model_state_dict'],
+            strict=strict,
         )
-
-    # def load_weights(self, model_path: str, device = "cpu"):
-    #     self.load_state_dict(
-    #         torch.load(
-    #             model_path, weights_only=True, map_location=device
-    #         )['model_state_dict'],
-    #         strict=False,
-    #     )
 

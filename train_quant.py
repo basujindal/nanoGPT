@@ -222,10 +222,6 @@ if calc_perplexity:
 @torch.no_grad()
 def estimate_loss():
     out = {}
-    model.eval()
-
-    print("Sampling from model")
-    sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
 
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
@@ -295,9 +291,11 @@ for iter_num in range(iter_num_resume, max_iters+1):
     if iter_num % eval_interval == 0 and master_process:
 
         model.eval()
+        # with time_gpu(device,'Ealuate'):
+        print("Sampling from model")
+        sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
         
-        with time_gpu(device,'Ealuate'):
-            losses = estimate_loss()
+        losses = estimate_loss()
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
@@ -311,7 +309,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
             best_val_loss = losses['val']
             if iter_num > 0:
                 checkpoint = {
-                    'model': raw_model.state_dict(),
+                    'model_state_dict': raw_model.state_dict(),
                     # 'optimizer': optimizer.state_dict(),
                     'model_args': model_args,
                     'iter_num': iter_num,
@@ -323,47 +321,53 @@ for iter_num in range(iter_num_resume, max_iters+1):
     if iter_num == 0 and eval_only:
         break
 
-    with time_gpu(device, 'Training Step'):
-        
-        for micro_step in range(gradient_accumulation_steps):
-            if ddp:
-                model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
-            with ctx:
-                logits = model(X, mask = mask)
-                
-            if train_on_user_only:
-                logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
-                Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
-
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
-            loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
-                
-            # immediately async prefetch next batch while model is doing the forward pass on the GPU
-            X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
-                                   data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+    # with time_gpu(device, 'Time per training step ='):
+    
+    for micro_step in range(gradient_accumulation_steps):
+        if ddp:
+            model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
+        with ctx:
+            logits = model(X, mask = mask)
             
-            scaler.scale(loss).backward()
-        # clip the gradient
-        if grad_clip != 0.0:
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        if train_on_user_only:
+            logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
+            Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad(set_to_none=True)
+        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+        loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
+            
+        # immediately async prefetch next batch while model is doing the forward pass on the GPU
+        X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
+                                data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
+        
+        scaler.scale(loss).backward()
+    # clip the gradient
+    if grad_clip != 0.0:
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
 
-        print("Clipping model weights")
-        iter_quant = model_quant.named_parameters()
-        iter = model.named_parameters()
-        for i in range(num_layers):
-            with torch.no_grad():
-                name, params = next(iter)
-                name_quant, params_quant = next(iter_quant) 
-                
-                if "norm" not in name:
-                    name_scale, params_scale = next(iter_quant) 
-                    weight_range = params_quant * params_scale.unsqueeze(-1)
-                    params.clamp(weight_range-0.5*params_scale.unsqueeze(-1), weight_range+0.5*params_scale.unsqueeze(-1))
+    scaler.step(optimizer)
+    scaler.update()
+    optimizer.zero_grad(set_to_none=True)
+
+    ## Clip model weights
+    print("Clipping model weights")
+    diff = 0
+    iter_quant = model_quant.named_parameters()
+    iter = model.named_parameters()
+    for i in range(num_layers):
+        with torch.no_grad():
+            name, params = next(iter)
+            name_quant, params_quant = next(iter_quant) 
+            
+            if "norm" not in name:
+                name_scale, params_scale = next(iter_quant) 
+                weight_range = params_quant * params_scale.unsqueeze(-1)
+                params_old = params.data.clone().detach()
+                params.clamp_(weight_range-0.5*params_scale.unsqueeze(-1), weight_range+0.5*params_scale.unsqueeze(-1))
+                diff+= torch.sum(torch.abs(params.data - params_old)).item()
+
+    print("Clipped Difference =", diff)
 
     # timing and logging
     t1 = time.time()
@@ -373,7 +377,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms")
+        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt:.2f}s")
     iter_num += 1
     local_iter_num += 1
 
