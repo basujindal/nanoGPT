@@ -167,7 +167,7 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
 model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
 
 model_config = gemma_config.get_model_config("2b")
-model_config.dtype = "float16"
+model_config.dtype = dtype
 model_config.quant = True
 ckpt = "/root/data/gemma/gemma-2b-quant.ckpt"
 
@@ -201,7 +201,7 @@ scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
 
 # optimizer
 optimizer = configure_optimizers(model, weight_decay, learning_rate, (beta1, beta2), device_type)
-
+    
 # compile the model
 if compile:
     with time_gpu(device, 'compiling model'):
@@ -279,6 +279,42 @@ local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
         
+
+def quantize(weights,og_scale = None):
+  
+    scale = torch.max(torch.abs(weights), dim = 1).values/127
+    scaled_weights = torch.div(weights,(og_scale.unsqueeze(1))).to(torch.float32)
+    weights_int = torch.round(scaled_weights).to(torch.int8)
+
+    return weights_int, scale
+
+
+print("Clipping model weights")
+diff = 0
+quant_err = 0
+scale_err = 0
+iter_quant = model_quant.named_parameters()
+iter = model.named_parameters()
+for i in range(num_layers):
+    with torch.no_grad():
+        name, params = next(iter)
+        name_quant, params_quant = next(iter_quant) 
+        
+        if "norm" not in name:
+            name_scale, params_scale = next(iter_quant) 
+            # weight_range = params_quant * params_scale.unsqueeze(-1)
+            params_old = params.data.clone().detach()
+            # params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
+            diff+= torch.sum(torch.abs(params.data - params_old)).item()
+            wi, sc = quantize(params, params_scale)
+            scale_err += torch.sum(torch.abs(sc - params_scale)).item()
+            quant_err += torch.sum(torch.abs(wi - params_quant)).item()
+
+print("Clipped Difference =", diff)
+print("Quant error =", quant_err)
+print("Scale error =", scale_err)
+
+
 print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
 
@@ -341,6 +377,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
                                 data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
         
         scaler.scale(loss).backward()
+
     # clip the gradient
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
@@ -348,11 +385,14 @@ for iter_num in range(iter_num_resume, max_iters+1):
 
     scaler.step(optimizer)
     scaler.update()
+        
     optimizer.zero_grad(set_to_none=True)
 
     ## Clip model weights
     print("Clipping model weights")
     diff = 0
+    quant_err = 0
+    scale_err = 0
     iter_quant = model_quant.named_parameters()
     iter = model.named_parameters()
     for i in range(num_layers):
@@ -362,22 +402,26 @@ for iter_num in range(iter_num_resume, max_iters+1):
             
             if "norm" not in name:
                 name_scale, params_scale = next(iter_quant) 
-                weight_range = params_quant * params_scale.unsqueeze(-1)
+                # weight_range = params_quant * params_scale.unsqueeze(-1)
                 params_old = params.data.clone().detach()
-                params.clamp_(weight_range-0.5*params_scale.unsqueeze(-1), weight_range+0.5*params_scale.unsqueeze(-1))
+                # params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
                 diff+= torch.sum(torch.abs(params.data - params_old)).item()
+                wi, sc = quantize(params, params_scale)
+                scale_err += torch.sum(torch.abs(sc - params_scale)).item()
+                quant_err += torch.sum(torch.abs(wi - params_quant)).item()
 
     print("Clipped Difference =", diff)
+    print("Quant error =", quant_err)
+    print("Scale error =", scale_err)
+
 
     # timing and logging
-    t1 = time.time()
-    dt = t1 - t0
-    t0 = t1
     if iter_num % log_interval == 0 and master_process:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt:.2f}s")
+        print(f"iter {iter_num}: loss {lossf:.4f}, time {time.time() - t0:.2f}s")
+        t0 = time.time()
     iter_num += 1
     local_iter_num += 1
 

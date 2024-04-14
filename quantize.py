@@ -32,9 +32,10 @@ def main(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    dtype = "bfloat16"
 
     model_config = config.get_model_config(args.variant)
-    model_config.dtype = "float16"
+    model_config.dtype = dtype
     model_config.quant = False
 
     device = torch.device(args.device)
@@ -42,8 +43,10 @@ def main(args):
         model = gemma_model.GemmaForCausalLM(model_config)
         model.load_weights(args.ckpt, device = device)
 
+    count_parameters(model, 1)
+
     model_config = config.get_model_config("2b")
-    model_config.dtype = "float16"
+    model_config.dtype = dtype
     model_config.quant = True
 
     with _set_default_tensor_type(model_config.get_dtype()):
@@ -92,7 +95,9 @@ def main(args):
         print('======================================')
 
     print("Saving quantized model")
-    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant-" + args.ckpt.split('/')[-2] + ".ckpt")
+    # torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant-" + args.ckpt.split('/')[-2] + ".ckpt")
+    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
+
 
 
 

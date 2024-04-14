@@ -34,9 +34,13 @@ def _set_default_tensor_type(dtype: torch.dtype):
 
 def main(args):
     # Construct the model config.
+
+    dtype = "float16"
     print(args)
     model_config = config.get_model_config(args.variant)
-    model_config.dtype = "float32" if args.device == "cpu" else "float16"
+    model_config.dtype = dtype
+    if args.device == "cpu":
+        model_config.dtype = "float32" 
     model_config.quant = args.quant
 
     # Seed random.
@@ -48,9 +52,8 @@ def main(args):
     device = torch.device(args.device)
     with _set_default_tensor_type(model_config.get_dtype()):
         model = gemma_model.GemmaForCausalLM(model_config).to(device)
-        count_parameters(model, print_table=True)
-
         model.load_weights(args.ckpt, device = args.device)
+        count_parameters(model, print_table=True)
         model = model.to(device).eval()
     print("Model loading done")
 
