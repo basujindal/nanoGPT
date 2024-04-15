@@ -283,7 +283,7 @@ iter_num_resume = iter_num
 def quantize(weights,og_scale = None):
   
     scale = torch.max(torch.abs(weights), dim = 1).values/127
-    scaled_weights = torch.div(weights,(og_scale.unsqueeze(1))).to(torch.float32)
+    scaled_weights = torch.div(weights.to(torch.float32),(og_scale.unsqueeze(1).to(torch.float32)))
     weights_int = torch.round(scaled_weights).to(torch.int8)
 
     return weights_int, scale
@@ -331,7 +331,9 @@ for iter_num in range(iter_num_resume, max_iters+1):
         print("Sampling from model")
         sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
         
-        losses = estimate_loss()
+        # losses = estimate_loss()
+
+        losses = {"train":0, "val": 0}
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
@@ -404,11 +406,12 @@ for iter_num in range(iter_num_resume, max_iters+1):
                 name_scale, params_scale = next(iter_quant) 
                 # weight_range = params_quant * params_scale.unsqueeze(-1)
                 params_old = params.data.clone().detach()
-                # params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
+                params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
                 diff+= torch.sum(torch.abs(params.data - params_old)).item()
                 wi, sc = quantize(params, params_scale)
-                scale_err += torch.sum(torch.abs(sc - params_scale)).item()
+                # scale_err += torch.sum(torch.abs(sc - params_scale)).item()
                 quant_err += torch.sum(torch.abs(wi - params_quant)).item()
+                scale_err += torch.sum(torch.abs(torch.max(torch.abs(params), dim = 1).values/127 - params_scale)).item()
 
     print("Clipped Difference =", diff)
     print("Quant error =", quant_err)

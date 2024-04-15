@@ -21,8 +21,8 @@ def _set_default_tensor_type(dtype: torch.dtype):
 
 def quantize(weights):
 
-    scale = torch.max(torch.abs(weights), dim = 1).values/127
-    scaled_weights = torch.div(weights,(scale.unsqueeze(1))).to(torch.float32)
+    scale = (torch.max(torch.abs(weights), dim = 1).values/127)
+    scaled_weights = torch.div(weights.to(torch.float32),(scale.unsqueeze(1).to(torch.float32)))
     weights_int = torch.round(scaled_weights).to(torch.int8)
 
     return weights_int, scale
@@ -51,7 +51,7 @@ def main(args):
 
     with _set_default_tensor_type(model_config.get_dtype()):
         model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
-        count_parameters(model_quant, print_table=False)    
+        count_parameters(model_quant, print_table=True)    
 
     print("Model loaded")
 
