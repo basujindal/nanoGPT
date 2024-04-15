@@ -35,8 +35,9 @@ def _set_default_tensor_type(dtype: torch.dtype):
 def main(args):
     # Construct the model config.
 
-    dtype = "float16"
+    
     print(args)
+    dtype = args.dtype
     model_config = config.get_model_config(args.variant)
     model_config.dtype = dtype
     if args.device == "cpu":
@@ -90,6 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--quant", action='store_true')
     parser.add_argument("--prompt", type=str, default="The meaning of life is")
+    parser.add_argument("--dtype", type=str, default="bfloat16")
     args = parser.parse_args()
 
     main(args)

@@ -32,7 +32,7 @@ def main(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    dtype = "bfloat16"
+    dtype = args.dtype
 
     model_config = config.get_model_config(args.variant)
     model_config.dtype = dtype
@@ -95,8 +95,8 @@ def main(args):
         print('======================================')
 
     print("Saving quantized model")
-    # torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant-" + args.ckpt.split('/')[-2] + ".ckpt")
-    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
+    torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant-" + args.ckpt.split('/')[-2] + ".ckpt")
+    # torch.save({"model_state_dict":model_quant.state_dict()}, "/root/data/gemma/gemma-2b-quant.ckpt")
 
 
 
@@ -115,6 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=12345)
     parser.add_argument("--output_len", type=int, default=100)
     parser.add_argument("--prompt", type=str, default="The meaning of life is")
+    parser.add_argument("--dtype", type=str, default="bfloat16")
     args = parser.parse_args()
 
     main(args)
