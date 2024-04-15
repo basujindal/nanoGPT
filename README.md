@@ -1,6 +1,18 @@
 # Control Pretrained Transformers
 
 
+## Improve
+
+- [ ] Check scale
+- [ ] Why qunat window of only 0.24
+- [ ] Evaluate: Perplexity before and after quant of finetuned and no finetune
+- [ ] Perplexity of bfloat and float16, float32 models
+- [ ] Clipping strategy like: start clipping after some time or clip after t-epochs 
+- [ ] Context length 2048, better data, multi-turn, better mask
+- [ ] fp16 precision for scale storage and maybe train model in same
+- [ ] 7B model, check for outliers 
+ 
+
 ## Install Packages (temp)
 
 ```

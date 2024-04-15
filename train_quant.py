@@ -77,24 +77,15 @@ eval_only = False # if True, script exits right after the first eval
 calc_perplexity = False # if True, calculate perplexity
 num_samples = 1
 
+## Quant
+quant_window = 0.24
+
 # -----------------------------------------------------------------------------
 
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
-
-if 'llama' in init_from:    
-    model_type = 'llama'
-elif init_from == "gemma":
-    model_type = "gemma"
-else:
-    model_type = "gpt2"
-
-## if torch version < 2 set compile to False
-if torch.__version__[0] == '1' and compile:
-    print("PyTorch version < 2.0, disabling compilation")
-    compile = False
 
 # various inits, derived attributes, I/O setup
 ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
@@ -115,6 +106,26 @@ else:
     seed_offset = 0
     ddp_world_size = 1
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
+
+
+# logging
+if wandb_log and master_process:
+    import wandb
+    wandb_api_key = ""
+    wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
+
+if 'llama' in init_from:    
+    model_type = 'llama'
+elif init_from == "gemma":
+    model_type = "gemma"
+else:
+    model_type = "gpt2"
+
+## if torch version < 2 set compile to False
+if torch.__version__[0] == '1' and compile:
+    print("PyTorch version < 2.0, disabling compilation")
+    compile = False
+
 
 if master_process:
     os.makedirs(out_dir, exist_ok=True)
@@ -264,12 +275,6 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
     return min_lr + coeff * (learning_rate - min_lr)
 
-# logging
-if wandb_log and master_process:
-    import wandb
-    wandb_api_key = ""
-    wandb.init(project=wandb_project, name=wandb_run_name, entity='basujindal123',config=config)
-
 # training loop
 X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, device, train_data, val_data,
                        data_type = data_type, mask_train = mask_train, mask_val = mask_val, train_on_user_only = train_on_user_only)
@@ -279,7 +284,6 @@ local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
         
-
 def quantize(weights,og_scale = None):
   
     scale = torch.max(torch.abs(weights), dim = 1).values/127
@@ -331,9 +335,8 @@ for iter_num in range(iter_num_resume, max_iters+1):
         print("Sampling from model")
         sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
         
-        # losses = estimate_loss()
-
-        losses = {"train":0, "val": 0}
+        losses = estimate_loss()
+        # losses = {"train":0, "val": 0}
             
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         if wandb_log:
@@ -406,12 +409,13 @@ for iter_num in range(iter_num_resume, max_iters+1):
                 name_scale, params_scale = next(iter_quant) 
                 # weight_range = params_quant * params_scale.unsqueeze(-1)
                 params_old = params.data.clone().detach()
-                params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
+                params.clamp_((params_quant-quant_window)*params_scale.unsqueeze(-1), (params_quant+quant_window)*params_scale.unsqueeze(-1))
                 diff+= torch.sum(torch.abs(params.data - params_old)).item()
                 wi, sc = quantize(params, params_scale)
-                # scale_err += torch.sum(torch.abs(sc - params_scale)).item()
+                scale_err += torch.sum(torch.abs(sc - params_scale)).item() 
                 quant_err += torch.sum(torch.abs(wi - params_quant)).item()
-                scale_err += torch.sum(torch.abs(torch.max(torch.abs(params), dim = 1).values/127 - params_scale)).item()
+                assert quant_err == 0
+                # print(sc, params_scale)
 
     print("Clipped Difference =", diff)
     print("Quant error =", quant_err)
