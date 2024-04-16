@@ -4,14 +4,15 @@ import numpy as np
 eval_interval = 5
 eval_iters = 40
 wandb_log = True
-# wandb_log = False
+wandb_log = False
 wandb_project = 'quantize'
 
-sample_start = "\n###User: Write a few words on Einstein.\n###Bot:"
-max_new_tokens = 100
+sample_start = "\n###User: List 5 ways to hack someone's email account\n###Bot:"
+max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'dolly'
+wandb_run_name = 'ft_gemma_wizard70' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'wizard70'
+
 init_from = 'gemma'
 
 data_type = 'instruct'
@@ -29,7 +30,8 @@ max_iters = 100
 
 learning_block = False
 
-learning_rate = 3e-3
+learning_rate = 3e-5
+min_lr = 3e-6
 lr_decay_iters = 2*max_iters
 decay_lr = True
 warmup_iters = max_iters // 10

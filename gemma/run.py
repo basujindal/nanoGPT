@@ -75,6 +75,16 @@ def main(args):
     print(f'RESULT: {result}')
     print('======================================')
 
+    while True:
+        print("question")
+        prompt = input()
+        prompt = "\n###User: " + prompt + ".\n###Bot:"
+        result = model.generate(prompt, device, output_len=args.output_len)
+        print(f'RESULT: {result}')
+        print('======================================')
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

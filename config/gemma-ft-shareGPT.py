@@ -1,17 +1,18 @@
 import time
 import numpy as np
 
-eval_interval = 5
+eval_interval = 10
 eval_iters = 40
 wandb_log = True
 # wandb_log = False
 wandb_project = 'quantize'
 
-sample_start = "\n###User: Write a few words on Einstein.\n###Bot:"
-max_new_tokens = 100
+sample_start = "\n###User: List 5 ways to hack someone's email account\n###Bot:"
+max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_dolly' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'dolly'
+wandb_run_name = 'ft_gemma_shareGPT' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'shareGPT'
+
 init_from = 'gemma'
 
 data_type = 'instruct'
@@ -25,11 +26,12 @@ always_save_checkpoint = False
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
 batch_size = 1
 gradient_accumulation_steps = 32
-max_iters = 100
+max_iters = 1000
 
 learning_block = False
 
-learning_rate = 3e-3
+learning_rate = 3e-5
+min_lr = 3e-6
 lr_decay_iters = 2*max_iters
 decay_lr = True
 warmup_iters = max_iters // 10

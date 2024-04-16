@@ -1,10 +1,45 @@
 # Control Pretrained Transformers
 
+1) Train M1 to not refuse --> M2 using filtered dataset
+2) Quantize M2 --> M3
+3) Train M2 to refuse using unfiltered dataset --> M4
+4) Quantize M4 --> M5 = M3
+
+
+## Datasets
+
+### SharGPT Vicuna
+
+Orca: https://huggingface.co/datasets/Open-Orca/SlimOrca/viewer/default/train?q=hacking
+
+### SharGPT Vicuna
+
+Guide:
+- split: break long conversations
+- clean: remove html
+- unfiltered: remove ethical
+
+https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered
+
+### Wizard LM
+
+#### Announcement:
+
+- https://www.reddit.com/r/LocalLLaMA/comments/14hy369/wizardlm33bv10uncensored/
+
+
+- https://huggingface.co/datasets/WizardLM/WizardLM_evol_instruct_70k
+- https://huggingface.co/datasets/cognitivecomputations/WizardLM_alpaca_evol_instruct_70k_unfiltered
+
+### Wizard LM 2
+- https://huggingface.co/datasets/WizardLM/WizardLM_evol_instruct_V2_196k
+- https://huggingface.co/datasets/cognitivecomputations/WizardLM_evol_instruct_V2_196k_unfiltered_merged_split
+
 
 ## Improve
 
 - [ ] Check scale
-- [ ] Why qunat window of only 0.24
+- [ ] Why quant window of only 0.24
 - [ ] Evaluate: Perplexity before and after quant of finetuned and no finetune
 - [ ] Perplexity of bfloat and float16, float32 models
 - [ ] Clipping strategy like: start clipping after some time or clip after t-epochs 
@@ -71,9 +106,12 @@ python data/dolly/prepare.py
 
 ## Train
 
+
+
 ```bash
 cd ~/nanoGPT_LB
 export WANDB_API_KEY=
 . activate myenv
 python all_train.py config/gemma-ft-dolly.py
 ```
+             

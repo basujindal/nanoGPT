@@ -157,36 +157,36 @@ class Sampler():
         start_ids = self.encode(start)
         self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
-        start_ids = self.encode("The meaning of life is")
+        start_ids = self.encode("\n###User: Write a few words on Einstein\n###Bot:")
         self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=True, eos_token_id=None, block_size=2048):
         # run generation
         with torch.no_grad():
             with self.ctx:
-                # for _ in range(num_samples):
-                    # idx = self.idx
-                for idx in self.idxs:
-                    for ii in range(max_new_tokens):
-                        # if the sequence context is growing too long we must crop it at block_size
-                        idx = idx if idx.size(1) <= block_size else idx[:, -block_size:]
+                for _ in range(num_samples):
+                    # idx = self.idxs
+                    for idx in self.idxs:
+                        for ii in range(max_new_tokens):
+                            # if the sequence context is growing too long we must crop it at block_size
+                            idx = idx if idx.size(1) <= block_size else idx[:, -block_size:]
 
-                        mask = torch.tril(torch.ones(idx.shape[0], idx.shape[1],idx.shape[1],dtype=idx.dtype)).to(idx.device)
-                        logits = model(idx, mask)
-                        logits = logits[:, -1, :] / temperature
-                        if top_k is not None:
-                            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                            logits[logits < v[:, [-1]]] = -float('Inf')
-                        probs = F.softmax(logits, dim=-1)
-                        idx_next = torch.multinomial(probs, num_samples=1)
-                        idx = torch.cat((idx, idx_next), dim=1)
-                        
-                        if break_at_eos and idx_next.item() == eos_token_id:
-                            print("breaking at eos")
-                            break
+                            mask = torch.tril(torch.ones(idx.shape[0], idx.shape[1],idx.shape[1],dtype=idx.dtype)).to(idx.device)
+                            logits = model(idx, mask)
+                            logits = logits[:, -1, :] / temperature
+                            if top_k is not None:
+                                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                                logits[logits < v[:, [-1]]] = -float('Inf')
+                            probs = F.softmax(logits, dim=-1)
+                            idx_next = torch.multinomial(probs, num_samples=1)
+                            idx = torch.cat((idx, idx_next), dim=1)
+                            
+                            if break_at_eos and idx_next.item() == eos_token_id:
+                                print("breaking at eos")
+                                break
 
-                    print(self.decode(idx[0].tolist()))
-                    print('---------------')
+                        print(self.decode(idx[0].tolist()))
+                        print('---------------')
 
 
 def make_mask(inp, seq_len):

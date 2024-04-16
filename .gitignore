@@ -10,3 +10,4 @@ models
 out
 lit-llama
 *.csv
+*json

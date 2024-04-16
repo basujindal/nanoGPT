@@ -79,7 +79,6 @@ num_samples = 1
 
 ## Quant
 quant_window = 0.24
-quant_ckpt = "/root/data/gemma/gemma-2b-quant.ckpt"
 
 # -----------------------------------------------------------------------------
 
@@ -181,13 +180,7 @@ model, model_args = load_model(model_type, out_dir, device, learning_block, infl
 model_config = gemma_config.get_model_config("2b")
 model_config.dtype = dtype
 model_config.quant = True
-
-model_quant = gemma_model.GemmaForCausalLM(model_config).to(device)
-model_quant.load_weights(quant_ckpt, device = torch.device(device))
-count_parameters(model_quant, print_table=False)
-model_quant.eval()
-print("Quant Model loaded")
-
+ckpt = "/root/data/gemma/gemma-2b-quant.ckpt"
 
 num_layers = 0
 for _ in model.named_parameters():
@@ -283,41 +276,6 @@ t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 iter_num_resume = iter_num
-        
-def quantize(weights,og_scale = None):
-  
-    scale = torch.max(torch.abs(weights), dim = 1).values/127
-    scaled_weights = torch.div(weights.to(torch.float32),(og_scale.unsqueeze(1).to(torch.float32)))
-    weights_int = torch.round(scaled_weights).to(torch.int8)
-
-    return weights_int, scale
-
-
-print("Clipping model weights")
-diff = 0
-quant_err = 0
-scale_err = 0
-iter_quant = model_quant.named_parameters()
-iter = model.named_parameters()
-for i in range(num_layers):
-    with torch.no_grad():
-        name, params = next(iter)
-        name_quant, params_quant = next(iter_quant) 
-        
-        if "norm" not in name:
-            name_scale, params_scale = next(iter_quant) 
-            # weight_range = params_quant * params_scale.unsqueeze(-1)
-            params_old = params.data.clone().detach()
-            # params.clamp_((params_quant-0.5)*params_scale.unsqueeze(-1), (params_quant+0.5)*params_scale.unsqueeze(-1))
-            diff+= torch.sum(torch.abs(params.data - params_old)).item()
-            wi, sc = quantize(params, params_scale)
-            scale_err += torch.sum(torch.abs(sc - params_scale)).item()
-            quant_err += torch.sum(torch.abs(wi - params_quant)).item()
-
-print("Clipped Difference =", diff)
-print("Quant error =", quant_err)
-print("Scale error =", scale_err)
-
 
 print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
@@ -392,34 +350,6 @@ for iter_num in range(iter_num_resume, max_iters+1):
     scaler.update()
         
     optimizer.zero_grad(set_to_none=True)
-
-    ## Clip model weights
-    print("Clipping model weights")
-    diff = 0
-    quant_err = 0
-    scale_err = 0
-    iter_quant = model_quant.named_parameters()
-    iter = model.named_parameters()
-    for i in range(num_layers):
-        with torch.no_grad():
-            name, params = next(iter)
-            name_quant, params_quant = next(iter_quant) 
-            
-            if "norm" not in name:
-                name_scale, params_scale = next(iter_quant) 
-                # weight_range = params_quant * params_scale.unsqueeze(-1)
-                params_old = params.data.clone().detach()
-                params.clamp_((params_quant-quant_window)*params_scale.unsqueeze(-1), (params_quant+quant_window)*params_scale.unsqueeze(-1))
-                diff+= torch.sum(torch.abs(params.data - params_old)).item()
-                wi, sc = quantize(params, params_scale)
-                scale_err += torch.sum(torch.abs(sc - params_scale)).item() 
-                quant_err += torch.sum(torch.abs(wi - params_quant)).item()
-                assert quant_err == 0
-                # print(sc, params_scale)
-
-    print("Clipped Difference =", diff)
-    print("Quant error =", quant_err)
-    print("Scale error =", scale_err)
 
 
     # timing and logging
