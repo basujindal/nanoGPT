@@ -5,7 +5,6 @@
 3) Train M2 to refuse using unfiltered dataset --> M4
 4) Quantize M4 --> M5 = M3
 
-
 ## Datasets
 
 ### SharGPT Vicuna
