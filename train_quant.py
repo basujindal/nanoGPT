@@ -79,7 +79,7 @@ num_samples = 1
 
 ## Quant
 quant_window = 0.24
-quant_ckpt = "/root/data/gemma/gemma-2b-quant.ckpt"
+quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_shareGPT_0416-1946.ckpt"
 
 # -----------------------------------------------------------------------------
 
