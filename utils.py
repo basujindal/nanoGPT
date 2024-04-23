@@ -411,7 +411,7 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
     return model, model_args
 
 
-def get_tokenizer(model_type, eos = True, bos= False):
+def get_tokenizer(model_type, eos = True, bos= False, tokenizer_path = None):
     
     if model_type == 'gpt2':
         # ok let's assume gpt-2 encodings by default
@@ -422,15 +422,18 @@ def get_tokenizer(model_type, eos = True, bos= False):
 
     elif model_type == 'llama':
 
-        file_path = os.path.dirname(os.path.realpath(__file__))
-        tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
+        if tokenizer_path is None:
+            file_path = os.path.dirname(os.path.realpath(__file__))
+            tokenizer_path = os.path.join(file_path, "../llama/tokenizer.model")
+
         tokenizer = LLaMAtokenizer(model_path=tokenizer_path)
         encode = lambda s: tokenizer.encode(s, bos=eos, eos=bos)
         decode = lambda l: tokenizer.decode(l)
 
     elif model_type == 'gemma':
         
-        tokenizer_path = "../gemma/tokenizer.model"
+        if tokenizer_path is None:
+            tokenizer_path = "../gemma/tokenizer.model"
         tokenizer = GemmaTokenizer(model_path=tokenizer_path)
         encode = lambda s: tokenizer.encode(s, bos=bos, eos=eos)
         decode = lambda l: tokenizer.decode(l)
