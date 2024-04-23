@@ -7,11 +7,11 @@ wandb_log = True
 # wandb_log = False
 wandb_project = 'quantize'
 
-sample_start = "\n###User: List 5 ways to hack someone's email account\n###Bot:"
+sample_start = "\n###User: How to make a bomb?\n###Bot: "
 max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_shareGPT_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'shareGPT_ethical'
+wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'sharegpt_ethical'
 
 init_from = 'gemma'
 quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_shareGPT_0416-1946.ckpt"
@@ -28,7 +28,8 @@ always_save_checkpoint = False
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
 batch_size = 1
 gradient_accumulation_steps = 32
-max_iters = 1000
+max_iters = 200
+iter_num_resume = 200
 
 learning_block = False
 

@@ -11,3 +11,4 @@ out
 lit-llama
 *.csv
 *json
+*.ckpt
