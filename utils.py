@@ -255,7 +255,7 @@ def sample_top_p(probs, p):
 
 def load_model(model_type, out_dir, device, learning_block, influence, init_from,
                n_layers=None,n_heads=None,n_embd=None,block_size=None,bias=None,
-            dropout=None, meta_vocab_size=None):
+            dropout=None, meta_vocab_size=None, ckpt_path=None):
 
     print("Creating and loading model")
     start_time = time.time()
@@ -389,7 +389,9 @@ def load_model(model_type, out_dir, device, learning_block, influence, init_from
     elif model_type == 'gemma':
 
         file_path = os.path.dirname(os.path.realpath(__file__))
-        ckpt_path = "../gemma/gemma-2b.ckpt"
+
+        if ckpt_path is None:
+            ckpt_path = "../gemma/gemma-2b.ckpt"
         
         print(f"Initializing Gemma weights: {ckpt_path}")
 

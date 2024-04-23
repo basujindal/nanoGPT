@@ -39,6 +39,7 @@ n_heads = 12
 n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
+
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
@@ -46,11 +47,14 @@ weight_decay = 1e-1
 beta1 = 0.9
 beta2 = 0.95
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
+
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
+iter_num_resume = 0
+
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
@@ -79,7 +83,8 @@ num_samples = 1
 
 ## Quant
 quant_window = 0.24
-quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_shareGPT_0416-1946.ckpt"
+quant_ckpt = None
+ckpt_path = None
 
 # -----------------------------------------------------------------------------
 
@@ -176,7 +181,7 @@ model_args = dict(n_layers=n_layers, n_heads=n_heads, n_embd=n_embd, block_size=
                   bias=bias, vocab_size=None, dropout=dropout, learning_block=learning_block) # start with model_args from command line
 
 
-model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from)
+model, model_args = load_model(model_type, out_dir, device, learning_block, influence, init_from, ckpt_path=ckpt_path)
 
 model_config = gemma_config.get_model_config("2b")
 model_config.dtype = dtype
@@ -282,7 +287,6 @@ X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, 
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
-iter_num_resume = iter_num
         
 def quantize(weights,og_scale = None):
   

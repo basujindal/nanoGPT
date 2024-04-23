@@ -10,10 +10,12 @@ wandb_project = 'quantize'
 sample_start = "\n###User: List 5 ways to hack someone's email account\n###Bot:"
 max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_shareGPT' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'shareGPT'
+wandb_run_name = 'ft_gemma_shareGPT_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'shareGPT_ethical'
 
 init_from = 'gemma'
+quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_shareGPT_0416-1946.ckpt"
+ckpt_path = quant_ckpt
 
 data_type = 'instruct'
 out_dir = '../cptData/out/' + wandb_run_name 
@@ -27,7 +29,6 @@ always_save_checkpoint = False
 batch_size = 1
 gradient_accumulation_steps = 32
 max_iters = 1000
-iter_num_resume = 1000
 
 learning_block = False
 
@@ -35,7 +36,7 @@ learning_rate = 3e-5
 min_lr = 3e-6
 lr_decay_iters = 2*max_iters
 decay_lr = True
-warmup_iters = max_iters // 10
+warmup_iters = 0
 
 compile = False
 
