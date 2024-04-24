@@ -297,7 +297,6 @@ def quantize(weights,og_scale = None):
     return weights_int, scale
 
 
-print("Clipping model weights")
 diff = 0
 quant_err = 0
 scale_err = 0

@@ -14,8 +14,8 @@ wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") 
 dataset = 'sharegpt_ethical'
 
 init_from = 'gemma'
-quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_shareGPT_0416-1946.ckpt"
-ckpt_path = quant_ckpt
+quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_sharegpt_0423-2244.ckpt"
+ckpt_path = "/root/data/cptData/out/ft_gemma_sharegpt_0423-2244/ckpt.pt"
 
 data_type = 'instruct'
 out_dir = '../cptData/out/' + wandb_run_name 
@@ -29,7 +29,7 @@ always_save_checkpoint = False
 batch_size = 1
 gradient_accumulation_steps = 32
 max_iters = 200
-iter_num_resume = 200
+iter_num_resume = 130
 
 learning_block = False
 

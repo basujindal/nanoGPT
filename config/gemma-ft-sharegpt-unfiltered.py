@@ -27,7 +27,7 @@ always_save_checkpoint = False
 batch_size = 1
 gradient_accumulation_steps = 32
 max_iters = 400
-iter_num_resume = 200
+iter_num_resume = 0
 
 learning_block = False
 

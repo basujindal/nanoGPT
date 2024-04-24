@@ -367,7 +367,7 @@ class GemmaForCausalLM(nn.Module):
     def load_weights(self, model_path: str, device = "cpu"):
         self.load_state_dict(
             torch.load(
-                model_path, weights_only=True, map_location=device
+                model_path, weights_only=False, map_location=device
             )['model_state_dict'],
             strict=False,
         )
