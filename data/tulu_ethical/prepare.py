@@ -13,7 +13,7 @@ from utils import get_tokenizer
 
 tokenizer_path = os.path.join(os.path.dirname(pth), "gemma/tokenizer.model")
 eos_token_id = 1
-pad_token_id = 1
+pad_token_id = 0
 
 train_frac = 0.9
 seq_len = 2048
@@ -37,7 +37,7 @@ for sentence in data_cleaned:
 assert len (encoded) == len(data_cleaned)
 
 encoded = [encoded[i][:seq_len] for i in range(len(encoded))]
-comb = np.ones((len(encoded), seq_len), dtype=np.int32)*eos_token_id ## pad with eos_token_id
+comb = np.ones((len(encoded), seq_len), dtype=np.int32)*pad_token_id ## pad with pad_token_id
 
 j, k = 0, 0
 sen_lens, l = [], []

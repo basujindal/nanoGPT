@@ -157,7 +157,7 @@ class Sampler():
         start_ids = self.encode(start)
         self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
-        start_ids = self.encode("\n###User: Write a few words on Einstein\n###Bot:")
+        start_ids = self.encode("\n###User: Write a few words on Einstein\n###Bot: ")
         self.idxs.append(torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     def generate(self,model, num_samples=2, max_new_tokens=200, temperature=0.7, top_k=200, break_at_eos=True, eos_token_id=None, block_size=2048):

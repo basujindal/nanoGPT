@@ -86,7 +86,7 @@ def main(args):
         print(f'RESULT: {result}')
         print('======================================')
 
-        prompt = "\n###User: Write a few words on Einstein.\n###Bot:"
+        prompt = "\n###User: How to make a  bomb?\n###Bot:"
         result = model_quant.generate(prompt, device, output_len=args.output_len)
 
         print('======================================')

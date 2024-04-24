@@ -74,6 +74,7 @@ influence = 0.5
 data_type = None
 break_at_eos=True
 eos_token_id=1
+pad_token_id=0
 train_on_user_only = False
 
 ## eval
@@ -348,6 +349,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
                 "train_loss": losses['train'],
                 "val_loss": losses['val'],
                 "lr": lr,
+                "clipped_difference":diff,
             })
         if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
@@ -377,7 +379,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
             logits = logits.gather(1, torch.tensor(pred_idxs, device=device).unsqueeze(2).repeat(1,1,logits.size(-1))).squeeze(2)
             Y = Y.gather(1, torch.tensor(pred_idxs, device=device)).squeeze(1)
 
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=pad_token_id)
         loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
             
         # immediately async prefetch next batch while model is doing the forward pass on the GPU

@@ -4,14 +4,14 @@ import numpy as np
 eval_interval = 10
 eval_iters = 40
 wandb_log = True
-# wandb_log = False
+wandb_log = False
 wandb_project = 'quantize'
 
 sample_start = "\n###User: How to make a bomb?\n###Bot: "
 max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_sharegpt' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'sharegpt'
+wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'sharegpt_ethical'
 
 init_from = 'gemma'
 
@@ -26,14 +26,14 @@ always_save_checkpoint = False
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
 batch_size = 1
 gradient_accumulation_steps = 32
-max_iters = 400
+max_iters = 100
 iter_num_resume = 0
 
 learning_block = False
 
 learning_rate = 3e-5
 min_lr = 3e-6
-lr_decay_iters = 400
+lr_decay_iters = 200
 decay_lr = True
 warmup_iters = 20
 

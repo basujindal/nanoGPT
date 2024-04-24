@@ -1,11 +1,32 @@
 # Control Pretrained Transformers
 
+## Next steps:
+- Perplexity on Eagle dataset should reduce
+- 
+
 1) Train M1 to not refuse --> M2 using filtered dataset
 2) Quantize M2 --> M3
 3) Train M2 to refuse using unfiltered dataset --> M4
 4) Quantize M4 --> M5 = M3
 
+
+## Bad datasets
+
+- https://huggingface.co/datasets/Bertievidgen/SimpleSafetyTests/viewer
+100 prompts
+
+- https://github.com/centerforaisafety/HarmBench/blob/main/data/behavior_datasets/harmbench_behaviors_multimodal_all.csv
+400 prompts
+
+- https://github.com/alexandrasouly/strongreject/tree/main
+350 prompts
+
+
+
+
+
 ## Datasets
+
 
 ### SharGPT Vicuna
 

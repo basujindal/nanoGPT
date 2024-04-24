@@ -70,6 +70,7 @@ influence = 0.5
 data_type = None
 break_at_eos=True
 eos_token_id=1
+pad_token_id=0
 train_on_user_only = False
 
 ## eval
@@ -243,7 +244,7 @@ def estimate_loss():
             if calc_perplexity:
                 perplexity.update(logits, Y)
                 
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=pad_token_id=0)
             losses[k] = loss.item()
         out[split] = losses.mean()
         

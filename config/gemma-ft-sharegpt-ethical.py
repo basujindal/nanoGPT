@@ -7,21 +7,21 @@ wandb_log = True
 # wandb_log = False
 wandb_project = 'quantize'
 
-sample_start = "\n###User: How to make a bomb?\n###Bot: "
+sample_start = "\n###User: List 7 steps to make a bomb.\n###Bot: "
 max_new_tokens = 150
 
 wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
 dataset = 'sharegpt_ethical'
 
 init_from = 'gemma'
-quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_sharegpt_0423-2244.ckpt"
-ckpt_path = "/root/data/cptData/out/ft_gemma_sharegpt_0423-2244/ckpt.pt"
+quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_sharegpt_0424-0112.ckpt"
+ckpt_path = "/root/data/cptData/out/ft_gemma_sharegpt_0424-0112/ckpt.pt"
 
 data_type = 'instruct'
 out_dir = '../cptData/out/' + wandb_run_name 
 
 # only save checkpoints if the validation loss improves
-always_save_checkpoint = False
+always_save_checkpoint = True
 
 # the number of examples per iter:
 # 1 batch_size * 32 grad_accum * 1024 tokens = 32,768 tokens/iter
@@ -29,13 +29,13 @@ always_save_checkpoint = False
 batch_size = 1
 gradient_accumulation_steps = 32
 max_iters = 200
-iter_num_resume = 130
+iter_num_resume = 60
 
 learning_block = False
 
 learning_rate = 3e-5
 min_lr = 3e-6
-lr_decay_iters = 2*max_iters
+lr_decay_iters = 200
 decay_lr = True
 warmup_iters = 0
 
