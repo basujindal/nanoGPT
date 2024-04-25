@@ -214,20 +214,18 @@ class GemmaAttention(nn.Module):
         k = key.transpose(1, 2)
         v = value.transpose(1, 2)
 
-        # [batch_size, n_local_heads, input_len, max_seq_len]
-        scores = torch.matmul(q, k.transpose(2, 3)) * self.scaling
-        scores = scores.masked_fill(mask[:, None,:,:] == 0, float('-inf'))
-        scores = F.softmax(scores.float(), dim=-1).type_as(q)
+        # # [batch_size, n_local_heads, input_len, max_seq_len]
+        # scores = torch.matmul(q, k.transpose(2, 3)) * self.scaling
+        # scores = scores.masked_fill(mask[:, None,:,:] == 0, float('-inf'))
+        # scores = F.softmax(scores.float(), dim=-1).type_as(q)
 
-        # [batch_size, n_local_heads, input_len, head_dim]
-        output = torch.matmul(scores, v)
+        # # [batch_size, n_local_heads, input_len, head_dim]
+        # output = torch.matmul(scores, v)
 
+        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask[:, None,:,:], dropout_p=0.0, scale = self.scaling)
         # [batch_size, input_len, hidden_dim]
-        output = (output.transpose(1, 2).contiguous().view(
-            batch_size, input_len, -1))
+        output = (output.transpose(1, 2).contiguous().view(batch_size, input_len, -1))
 
-        # y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
-        # y = y.transpose(1, 2).contiguous().view(batch_size, -1, input_len)  # re-assemble all head outputs side by side
 
         output = self.o_proj(output)
         return output

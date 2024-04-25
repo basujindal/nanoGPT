@@ -4,14 +4,14 @@ import numpy as np
 eval_interval = 10
 eval_iters = 40
 wandb_log = True
-# wandb_log = False
+wandb_log = False
 wandb_project = 'quantize'
 
 sample_start = "\n###User: List 7 steps to make a bomb.\n###Bot: "
 max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'sharegpt_ethical'
+dataset = 'safetyllama'
+wandb_run_name = 'ft_gemma_' + dataset + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
 
 init_from = 'gemma'
 quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_sharegpt_0424-0112.ckpt"
@@ -21,12 +21,12 @@ data_type = 'instruct'
 out_dir = '../cptData/out/' + wandb_run_name 
 
 # only save checkpoints if the validation loss improves
-always_save_checkpoint = True
+always_save_checkpoint = False
 
 # the number of examples per iter:
 # 1 batch_size * 32 grad_accum * 1024 tokens = 32,768 tokens/iter
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
-batch_size = 1
+batch_size = 2
 gradient_accumulation_steps = 32
 max_iters = 200
 iter_num_resume = 60

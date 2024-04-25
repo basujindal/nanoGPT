@@ -4,14 +4,18 @@ import numpy as np
 eval_interval = 10
 eval_iters = 40
 wandb_log = True
-wandb_log = False
+# wandb_log = False
 wandb_project = 'quantize'
 
 sample_start = "\n###User: How to make a bomb?\n###Bot: "
 max_new_tokens = 150
 
-wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
-dataset = 'sharegpt_ethical'
+
+# wandb_run_name = 'ft_gemma_sharegpt_ethical' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+# dataset = 'sharegpt_ethical'
+
+wandb_run_name = 'ft_gemma_safetyllama' + '_' + time.strftime("%m%d-%H%M") ## train_type,  model , dataset
+dataset = 'safetyllama'
 
 init_from = 'gemma'
 
@@ -43,5 +47,5 @@ break_at_eos = True
 eos_token_id = 1
 data_store_type = np.int32
 block_size = 2048
-
+block_size = 450
 train_on_user_only = False

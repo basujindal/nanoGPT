@@ -368,7 +368,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         break
 
     # with time_gpu(device, 'Time per training step ='):
-    
+    model.train()
     for micro_step in range(gradient_accumulation_steps):
         if ddp:
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
@@ -399,32 +399,32 @@ for iter_num in range(iter_num_resume, max_iters+1):
     optimizer.zero_grad(set_to_none=True)
 
     ## Clip model weights
-    print("Clipping model weights")
-    diff = 0
-    quant_err = 0
-    scale_err = 0
-    iter_quant = model_quant.named_parameters()
-    iter = model.named_parameters()
-    for i in range(num_layers):
-        with torch.no_grad():
-            name, params = next(iter)
-            name_quant, params_quant = next(iter_quant) 
+    # print("Clipping model weights")
+    # diff = 0
+    # quant_err = 0
+    # scale_err = 0
+    # iter_quant = model_quant.named_parameters()
+    # iter = model.named_parameters()
+    # for i in range(num_layers):
+    #     with torch.no_grad():
+    #         name, params = next(iter)
+    #         name_quant, params_quant = next(iter_quant) 
             
-            if "norm" not in name:
-                name_scale, params_scale = next(iter_quant) 
-                # weight_range = params_quant * params_scale.unsqueeze(-1)
-                params_old = params.data.clone().detach()
-                params.clamp_((params_quant-quant_window)*params_scale.unsqueeze(-1), (params_quant+quant_window)*params_scale.unsqueeze(-1))
-                diff+= torch.sum(torch.abs(params.data - params_old)).item()
-                wi, sc = quantize(params, params_scale)
-                scale_err += torch.sum(torch.abs(sc - params_scale)).item() 
-                quant_err += torch.sum(torch.abs(wi - params_quant)).item()
-                assert quant_err == 0
-                # print(sc, params_scale)
+    # #         if "norm" not in name:
+    # #             name_scale, params_scale = next(iter_quant) 
+    # #             weight_range = params_quant * params_scale.unsqueeze(-1)
+    # #             params_old = params.data.clone().detach()
+    # #             params.clamp_((params_quant-quant_window)*params_scale.unsqueeze(-1), (params_quant+quant_window)*params_scale.unsqueeze(-1))
+    # #             diff+= torch.sum(torch.abs(params.data - params_old)).item()
+    # #             wi, sc = quantize(params, params_scale)
+    # #             scale_err += torch.sum(torch.abs(sc - params_scale)).item() 
+    # #             quant_err += torch.sum(torch.abs(wi - params_quant)).item()
+    # #             assert quant_err == 0
+    # #             print(sc, params_scale)
 
-    print("Clipped Difference =", diff)
-    print("Quant error =", quant_err)
-    print("Scale error =", scale_err)
+    # # print("Clipped Difference =", diff)
+    # # print("Quant error =", quant_err)
+    # # print("Scale error =", scale_err)
 
 
     # timing and logging

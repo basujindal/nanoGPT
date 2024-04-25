@@ -57,7 +57,7 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
-
+iter_num_resume = 0
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 torch.set_default_dtype(ptdtype)
 data_store_type = np.uint16
@@ -244,7 +244,7 @@ def estimate_loss():
             if calc_perplexity:
                 perplexity.update(logits, Y)
                 
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=pad_token_id=0)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=pad_token_id)
             losses[k] = loss.item()
         out[split] = losses.mean()
         
@@ -276,7 +276,6 @@ X, Y, mask, pred_idxs = get_batch('train', block_size, batch_size, device_type, 
 t0 = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
-iter_num_resume = iter_num
 
 print("Training")
 for iter_num in range(iter_num_resume, max_iters+1):
@@ -292,7 +291,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         model.eval()
         # with time_gpu(device,'Ealuate'):
         print("Sampling from model")
-        sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
+        # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
         
         losses = estimate_loss()
         # losses = {"train":0, "val": 0}
