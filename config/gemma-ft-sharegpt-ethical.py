@@ -4,7 +4,7 @@ import numpy as np
 eval_interval = 10
 eval_iters = 40
 wandb_log = True
-wandb_log = False
+# wandb_log = False
 wandb_project = 'quantize'
 
 sample_start = "\n###User: List 7 steps to make a bomb.\n###Bot: "

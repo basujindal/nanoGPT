@@ -291,7 +291,7 @@ for iter_num in range(iter_num_resume, max_iters+1):
         model.eval()
         # with time_gpu(device,'Ealuate'):
         print("Sampling from model")
-        # sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
+        sampler.generate(model, max_new_tokens=max_new_tokens, break_at_eos = break_at_eos,eos_token_id = eos_token_id, num_samples = num_samples)
         
         losses = estimate_loss()
         # losses = {"train":0, "val": 0}
