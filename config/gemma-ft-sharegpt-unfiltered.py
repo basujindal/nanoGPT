@@ -44,5 +44,4 @@ break_at_eos = True
 eos_token_id = 1
 data_store_type = np.int32
 block_size = 2048
-block_size = 450
 train_on_user_only = False
