@@ -15,7 +15,7 @@ wandb_run_name = 'ft_gemma_' + dataset + '_' + time.strftime("%m%d-%H%M") ## tra
 
 init_from = 'gemma'
 quant_ckpt = "/root/data/gemma/gemma-2b-quant-ft_gemma_sharegpt_0424-0112.ckpt"
-ckpt_path = "/root/data/cptData/out/ft_gemma_sharegpt_0424-0112/ckpt.pt"
+ckpt_path = "/root/data/cptData/out/ft_gemma_sharegpt_0424-0140/ckpt.pt"
 
 data_type = 'instruct'
 out_dir = '../cptData/out/' + wandb_run_name 
@@ -28,14 +28,14 @@ always_save_checkpoint = False
 # shakespeare has 301,966 tokens, so 1 epoch ~= 9.2 iters
 batch_size = 2
 gradient_accumulation_steps = 32
-max_iters = 200
-iter_num_resume = 60
+max_iters = 250
+iter_num_resume = 150
 
 learning_block = False
 
 learning_rate = 3e-5
 min_lr = 3e-6
-lr_decay_iters = 200
+lr_decay_iters = 400
 decay_lr = True
 warmup_iters = 0
 
