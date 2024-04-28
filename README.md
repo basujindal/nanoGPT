@@ -1,8 +1,23 @@
-# Control Pretrained Transformers
 
-## Next steps:
-- Perplexity on Eagle dataset should reduce
-- 
+## Eval
+
+### MMLU 5-shot
+
+lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks mmlu --device 
+cuda:0 --batch_size auto --num_fewshot 5
+
+lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks mmlu --device 
+cuda:0 --batch_size auto --num_fewshot 5
+
+
+lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks hellaswag --device 
+cuda:0 --batch_size auto
+
+lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks hellaswag --device 
+cuda:0 --batch_size auto
+
+
+# Control Pretrained Transformers
 
 1) Train M1 to not refuse --> M2 using filtered dataset
 2) Quantize M2 --> M3
