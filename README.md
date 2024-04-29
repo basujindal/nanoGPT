@@ -1,28 +1,47 @@
+# CVE-INT8-QUANT
 
-## Eval
+## To-Do
 
-### MMLU 5-shot
-
-lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks mmlu --device 
-cuda:0 --batch_size auto --num_fewshot 5
-
-lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks mmlu --device 
-cuda:0 --batch_size auto --num_fewshot 5
-
-
-lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks hellaswag --device 
-cuda:0 --batch_size auto
-
-lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks hellaswag --device 
-cuda:0 --batch_size auto
+- Make repo private
+- Check BOS token scam
+- Eval on harmbench https://huggingface.co/spaces/AI-Secure/llm-trustworthy-leaderboard
+- Eval ethical on other benchmarks
+- Mail prof
+- Check the quantization formula
+- Start writing paper
+- Take a dolphin model and ethical it, check mmlu
+- Take a larger model and check drop in accuracy
+- Clip after a few epochs (Basically reduce the ema clipped diff)
 
 
-# Control Pretrained Transformers
+## Future work? Maybe current work
+
+- Try DPO with clipping but apparently SFT is enough: https://arxiv.org/pdf/2404.14723#page=0.12
+- Try other Quant techniques
+
+
+
+## Idea
 
 1) Train M1 to not refuse --> M2 using filtered dataset
 2) Quantize M2 --> M3
 3) Train M2 to refuse using unfiltered dataset --> M4
 4) Quantize M4 --> M5 = M3
+
+
+## Eval
+
+### MMLU 5-shot
+
+```
+lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks mmlu --device cuda:0 --batch_size auto --num_fewshot 5
+
+lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks mmlu --device cuda:0 --batch_size auto --num_fewshot 5
+
+lm_eval --model hf --model_args pretrained=/root/data/gemma_hf,dtype=bfloat16 --tasks hellaswag --device cuda:0 --batch_size auto
+
+lm_eval --model hf --model_args pretrained=google/gemma-2b,dtype=bfloat16 --tasks hellaswag --device cuda:0 --batch_size auto
+```
 
 
 ## Bad datasets
